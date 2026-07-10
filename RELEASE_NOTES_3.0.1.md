@@ -1,6 +1,6 @@
 # Alcyone 3.0.1
 
-[Download Alcyone 3.0.1 for LG webOS](https://raw.githubusercontent.com/nguyenvanvuong2395-coder/Alcyone/main/packages/com.alcyone.vpn_3.0.1_all.ipk)
+[Download Alcyone 3.0.1 for LG webOS](https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/com.alcyone.vpn_3.0.1_all.ipk)
 
 Alcyone is a VPN client for rooted LG webOS TVs. It runs VPN directly on the television through xray and tun2socks and supports VLESS/XHTTP, VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2 profiles.
 
