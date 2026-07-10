@@ -19,7 +19,7 @@ Root access is required.
 Open Homebrew Channel, go to **Settings**, select **Add repository**, and enter:
 
 ```text
-https://raw.githubusercontent.com/nguyenvanvuong2395-coder/Alcyone/main/repository.json
+https://nguyenvanvuong2395-coder.github.io/Alcyone/r.json
 ```
 
 Return to the application list and install Alcyone from the added repository.
