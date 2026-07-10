@@ -26,7 +26,7 @@ Return to the application list and install Alcyone from the added repository.
 
 ## Manual installation
 
-Download the IPK from the latest GitHub release and install it with webOS Dev Manager, `ares-install`, or the Homebrew Channel installation service.
+Download [com.alcyone.vpn_3.0.1_all.ipk](https://raw.githubusercontent.com/nguyenvanvuong2395-coder/Alcyone/main/packages/com.alcyone.vpn_3.0.1_all.ipk) and install it with webOS Dev Manager, `ares-install`, or the Homebrew Channel installation service.
 
 ## Notes
 
@@ -46,4 +46,3 @@ Alcyone — VPN-клиент для телевизоров LG webOS с root-до
 Для установки через Homebrew Channel добавьте указанный выше адрес `repository.json` в разделе **Settings → Add repository**.
 
 При сообщении об ошибке указывайте модель телевизора и версию webOS.
-
