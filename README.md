@@ -26,7 +26,7 @@ Return to the application list and install Alcyone from the added repository.
 
 ## Manual installation
 
-Download [com.alcyone.vpn_3.0.2_all.ipk](https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/com.alcyone.vpn_3.0.2_all.ipk) and install it with webOS Dev Manager, `ares-install`, or the Homebrew Channel installation service.
+Download [com.alcyone.vpn_3.0.5_all.ipk](https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/com.alcyone.vpn_3.0.5_all.ipk) and install it with webOS Dev Manager, `ares-install`, or the Homebrew Channel installation service.
 
 ## Notes
 
