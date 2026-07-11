@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.5
+
+- Fixed a crash during VPN connection by automatically copying or downloading `geosite.dat` and `geoip.dat` routing database files when they are required by the active profile.
+- Restored support for importing and executing full Xray configurations, including balancers, routing tables, and server names.
+- Automatically configured bypass routes to balancer server addresses when launching Xray.
+
 ## 3.0.2
 
 - Added full D-pad navigation for LG remotes without a pointer, including predictable focus movement, OK activation, Back handling, and automatic scrolling.
