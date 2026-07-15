@@ -22,9 +22,9 @@
         "rootRequired": true,
         "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/com.alcyone.vpn_3.0.6_all.ipk",
         "ipkHash": {
-          "sha256": "e95b29f368072d54170fba5c4a5f646d01b02d3ee594398d321d3fd87ef78dba"
+          "sha256": "d6872f0e2b8add949f54c23d2c9484d776c8cc92e8dbdf878378db9c9df0a79a"
         },
-        "ipkSize": 13359094
+        "ipkSize": 13359096
       },
       "pool": "main",
       "shortDescription": "VPN client with multi-protocol subscriptions for rooted LG webOS TVs.",

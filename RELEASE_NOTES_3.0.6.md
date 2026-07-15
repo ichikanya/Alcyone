@@ -11,6 +11,7 @@ This update makes it easier to choose the best VPN server directly on an LG TV.
 - **Unavailable Servers**: Servers that do not answer the ping check are marked `n/a`. Some working VPN servers may block ICMP ping and can still connect normally.
 - **Sorting**: Sort each server group alphabetically by name or from lowest to highest measured ping. Unavailable and untested servers stay at the end of ping-sorted groups.
 - **TV-Friendly Controls**: The new controls support LG remote D-pad navigation and match the existing Alcyone interface.
+- **UI Polish**: The ping refresh button now matches the neighboring controls, and the Name/Ping selector divider stays equally clear in either selected state.
 
 Root access is required. Existing profiles, subscriptions, and settings in `/var/lib/alcyone` are preserved during the update.
 

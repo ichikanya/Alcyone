@@ -6,6 +6,7 @@
 - Added green, yellow, and red latency indicators and `n/a` for unavailable servers.
 - Added sorting by measured ping or server name, with unavailable servers placed last when sorting by ping.
 - Added full D-pad navigation for the new ping and sorting controls.
+- Polished the ping refresh button and made the sorting control divider consistent in both selected states.
 
 ## 3.0.5
 
