@@ -3,7 +3,7 @@
 ## 3.0.7
 
 - Removed the empty reserved ping column from server rows before latency has been measured.
-- Kept the protocol badge and Select/Delete controls compact and balanced while preserving the ping area whenever a check is running or a result is available.
+- Kept the protocol badge, measured ping value, and Select/Delete controls compact and balanced without fixed-width gaps.
 
 ## 3.0.6
 
