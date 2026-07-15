@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.7
+
+- Removed the empty reserved ping column from server rows before latency has been measured.
+- Kept the protocol badge and Select/Delete controls compact and balanced while preserving the ping area whenever a check is running or a result is available.
+
 ## 3.0.6
 
 - Added an on-demand server ping button that measures latency from the LG TV.
