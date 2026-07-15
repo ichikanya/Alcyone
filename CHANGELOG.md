@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.6
+
+- Added an on-demand server ping button that measures latency from the LG TV.
+- Added green, yellow, and red latency indicators and `n/a` for unavailable servers.
+- Added sorting by measured ping or server name, with unavailable servers placed last when sorting by ping.
+- Added full D-pad navigation for the new ping and sorting controls.
+
 ## 3.0.5
 
 - Fixed a crash during VPN connection by automatically copying or downloading `geosite.dat` and `geoip.dat` routing database files when they are required by the active profile.

@@ -9,6 +9,7 @@ Alcyone is named after the brightest star in the Pleiades. The application runs 
 - VLESS/XHTTP, VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2 profiles.
 - Subscription import through a built-in web interface.
 - Compatibility headers and User-Agent profiles for subscriptions intended for specific VPN clients.
+- On-demand server ping checks with latency indicators and sorting by ping or name.
 - Server selection, subscription updates, VPN autostart, external IP checks, and tunnel logs.
 - Russian and English interfaces with full D-pad navigation for LG remotes with or without a pointer.
 
@@ -26,7 +27,7 @@ Return to the application list and install Alcyone from the added repository.
 
 ## Manual installation
 
-Download [com.alcyone.vpn_3.0.5_all.ipk](https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/com.alcyone.vpn_3.0.5_all.ipk) and install it with webOS Dev Manager, `ares-install`, or the Homebrew Channel installation service.
+Download [com.alcyone.vpn_3.0.6_all.ipk](https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/com.alcyone.vpn_3.0.6_all.ipk) and install it with webOS Dev Manager, `ares-install`, or the Homebrew Channel installation service.
 
 ## Notes
 
