@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.9
+
+- Fixed large subscriptions disappearing from the LG TV app after a successful web import by synchronizing `profiles.json` through the local HTTP API instead of bounded Homebrew exec output.
+- Made active-server, language, and profile-delete updates atomic, and prevented truncated fallback reads from clearing the visible server list.
+- Raised the inherited open-files limit for Xray, tun2socks, and the web importer to address `accept4: too many open files` warnings under heavy connection load.
+- Stopped the previous web importer during in-place upgrades so the updated local API starts cleanly on the next app launch.
+- Added a 1.43 MB, 700-profile store stress test covering load, selection, settings, and deletion.
+
 ## 3.0.8
 
 - Aligned fixed-width protocol and ping columns across all measured server rows, including different protocol names and latency lengths.
