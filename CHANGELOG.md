@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.8
+
+- Aligned fixed-width protocol and ping columns across all measured server rows, including different protocol names and latency lengths.
+- Reduced the country badge spacing beside the selected server on the Home screen.
+- Updated the bundled Linux ARMv7 Xray core and pinned online recovery build to 26.3.27.
+
 ## 3.0.7
 
 - Removed the empty reserved ping column from server rows before latency has been measured.
