@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.1
+
+- Kept the selected server name exactly centered on Home while positioning the country flag immediately to its left.
+- Preserved the server-list scroll position when selecting an already visible server, with minimal scrolling only when focus leaves the viewport.
+- Made explicit disconnects remove all TUN routes, addresses, devices, and VPN processes, then restart the local web control interface on the restored network.
+
 ## 3.1.0
 
 - Simplified the Home selected-server card to show only the centered country flag and server name.
