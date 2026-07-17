@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.0
+
+- Simplified the Home selected-server card to show only the centered country flag and server name.
+- Aligned the shared Back button and centered page title across Settings subpages.
+- Restored the real VPN service state and control interface on startup, foreground resume, and webOS relaunch so an existing tunnel remains visible and controllable.
+
 ## 3.0.9
 
 - Fixed large subscriptions disappearing from the LG TV app after a successful web import by synchronizing `profiles.json` through the local HTTP API instead of bounded Homebrew exec output.
