@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.2
+
+- Redesigned the Home screen around one clear TV connection flow with a prominent VPN control and readable state.
+- Replaced the oversized selected-server area with a compact country flag and location badge that adapts to short and long names.
+- Centered the connection glow on the VPN control and kept the 1280×720 and 1366×768 layouts free of horizontal overflow.
+
 ## 3.1.1
 
 - Kept the selected server name exactly centered on Home while positioning the country flag immediately to its left.
