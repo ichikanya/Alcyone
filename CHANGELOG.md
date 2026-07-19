@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.3
+
+- Fixed gradual webOS slowdown and freezes by stopping per-connection tunnel logging, bounding retained logs and descriptors, and expiring inactive UDP/Xray connections.
+- Bounded web-control sockets, request bodies, subscription download concurrency, and download buffers on timeout or failure.
+- Reduced TV CPU and allocation churn with lightweight store revision polling, a slower status cadence, and a bounded in-app log.
+- Made VPN restart wait for complete disconnect cleanup and added lifecycle cleanup for timers, the log guard, sockets, and stale web processes.
+
 ## 3.1.2
 
 - Redesigned the Home screen around one clear TV connection flow with a prominent VPN control and readable state.

@@ -8,3 +8,4 @@ d6872f0e2b8add949f54c23d2c9484d776c8cc92e8dbdf878378db9c9df0a79a  com.alcyone.vp
 453cebc808b9d34e1aa2c390bcfb395d08e92c96c1fab880543ed1875b9ce78b  com.alcyone.vpn_3.1.0_all.ipk
 e0642b62fae7713ec17b482fb77d6e20a376909df611efa1b20e26e926a5d211  com.alcyone.vpn_3.1.1_all.ipk
 5aa92134bd18ec3920c203aedfbadeb00cb61d8af0392ce93328040ac59a353a  com.alcyone.vpn_3.1.2_all.ipk
+2770fab3db86434f66fd684680d4833af8eacb575965f6ecc1b8674593b4b555  com.alcyone.vpn_3.1.3_all.ipk

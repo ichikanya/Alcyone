@@ -1,4 +1,4 @@
-<h2>Alcyone 3.1.2</h2>
+<h2>Alcyone 3.1.3</h2>
 
 <p>Alcyone is a VPN client for rooted LG webOS TVs. It runs VPN directly on the television through xray and tun2socks, without requiring a separate router, phone, or computer as a gateway.</p>
 
@@ -7,6 +7,8 @@
 <p>The Home screen uses a TV-optimized connection layout with a prominent VPN control, clear connection state, centered glow, and a compact selected-location badge that adapts to short and long server names. Server-list navigation preserves the current position and scrolls only as far as needed to reveal a focused server.</p>
 
 <p>When Alcyone starts or returns to the foreground, it restores the real VPN service state. Disconnecting fully removes VPN processes and TUN network state, then restarts the local web control interface on the restored connection.</p>
+
+<p>Version 3.1.3 bounds tunnel logs, idle connections, sockets, descriptors, request buffers, and background polling to keep memory, CPU, and storage use stable during long VPN sessions on resource-constrained TVs.</p>
 
 <p>Servers can be pinged on demand from the TV and sorted by measured latency or name. Color-coded indicators show good, average, and poor latency, while unavailable servers are marked as n/a.</p>
 
