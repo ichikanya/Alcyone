@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.1.5
+
+- Added a canonical sing-box subscription request profile with deterministic HWID and webOS/Linux device headers for providers that otherwise return a protocol-filtered server list.
+- Compared INCY, HAPP, and sing-box responses and kept the fullest supported result without changing the existing protocol parsers or fallback request modes.
+
 ## 3.1.4
 
 - Combined individual-server and subscription import into one auto-detecting web form while preserving the existing import APIs and all supported protocols.
