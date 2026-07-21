@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.4
+
+- Combined individual-server and subscription import into one auto-detecting web form while preserving the existing import APIs and all supported protocols.
+- Fixed missing or broken nodes caused by encoded URI delimiters, incomplete transport deduplication, nested Clash YAML, gRPC/WS/ALPN fields, JSON aliases, and single-node base64 SOCKS lists.
+- Added a HAPP-style device header set and valid User-Agent structure, preserved INCY compatibility, and selected the fuller supported result when the two representations differ.
+- Made nested subscription refreshes atomic and bounded by child-count, aggregate-size, concurrency, and wall-clock limits; duplicate endpoints now retain ownership per subscription.
+
 ## 3.1.3
 
 - Fixed gradual webOS slowdown and freezes by stopping per-connection tunnel logging, bounding retained logs and descriptors, and expiring inactive UDP/Xray connections.

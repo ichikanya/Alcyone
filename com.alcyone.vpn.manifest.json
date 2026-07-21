@@ -1,15 +1,15 @@
 {
   "id": "com.alcyone.vpn",
-  "version": "3.1.3",
+  "version": "3.1.4",
   "type": "web",
   "title": "Alcyone",
   "appDescription": "VPN client with multi-protocol subscriptions for rooted LG webOS TVs.",
   "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
   "sourceUrl": "https://github.com/ichikanya/Alcyone",
   "rootRequired": true,
-  "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/com.alcyone.vpn_3.1.3_all.ipk",
+  "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/com.alcyone.vpn_3.1.4_all.ipk",
   "ipkHash": {
-    "sha256": "2770fab3db86434f66fd684680d4833af8eacb575965f6ecc1b8674593b4b555"
+    "sha256": "51b8f835d7f6f6b8d518e6bc7a9ab1cddfc68484bfe0e897fdcebca309ba8857"
   },
-  "ipkSize": 15779264
+  "ipkSize": 15781790
 }
