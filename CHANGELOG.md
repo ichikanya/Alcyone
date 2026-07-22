@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.1.7
+
+- Fixed gradual Xray descriptor exhaustion that could end in `accept4: too many open files`, connection failures, UI slowdown, and a frozen TV.
+- Added bounded XHTTP request multiplexing and shorter idle/half-closed connection lifetimes while preserving provider-defined XMUX settings.
+- Gave Xray limited descriptor headroom without raising the tun2socks or web-service limits, and added live descriptor counts to log diagnostics.
+- Made Clear logs physically truncate every managed log file instead of clearing only the viewer.
+- Made selecting a different server while VPN is active perform a complete disconnect and start with the new profile.
+
 ## 3.1.6
 
 - Removed INCY impersonation from subscription requests and reduced the canonical request set to HAPP Android TV plus sing-box.
