@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.6
+
+- Removed INCY impersonation from subscription requests and reduced the canonical request set to HAPP Android TV plus sing-box.
+- Merged unique supported nodes from both canonical responses instead of discarding one entire response by server count, fixing XHTTP and other nodes that were exposed by only one format.
+- Stopped treating third-party public-IP service failures as VPN startup failures, eliminating false error notifications and unnecessary tunnel restart loops.
+- Made the on-demand external-IP check compare the active VPN route with a temporary direct route and clean up its bypass routes afterward.
+
 ## 3.1.5
 
 - Added a canonical sing-box subscription request profile with deterministic HWID and webOS/Linux device headers for providers that otherwise return a protocol-filtered server list.

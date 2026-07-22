@@ -1,4 +1,4 @@
-<h2>Alcyone 3.1.5</h2>
+<h2>Alcyone 3.1.6</h2>
 
 <p>Alcyone is a VPN client for rooted LG webOS TVs. It runs VPN directly on the television through xray and tun2socks, without requiring a separate router, phone, or computer as a gateway.</p>
 
@@ -8,7 +8,9 @@
 
 <p>When Alcyone starts or returns to the foreground, it restores the real VPN service state. Disconnecting fully removes VPN processes and TUN network state, then restarts the local web control interface on the restored connection.</p>
 
-<p>Version 3.1.5 adds a provider-compatible sing-box request profile with deterministic device headers. Alcyone compares INCY, HAPP, and sing-box subscription responses and imports the fullest supported server set.</p>
+<p>Version 3.1.6 removes INCY impersonation and combines the unique supported nodes returned to HAPP and sing-box clients. This preserves XHTTP and other servers that may appear in only one subscription representation.</p>
+
+<p>VPN startup no longer depends on a third-party public-IP service, preventing false failure notifications and unnecessary tunnel restarts. The on-demand IP check now measures the VPN and direct routes separately and cleans up its temporary bypass routes.</p>
 
 <p>Tunnel logs, idle connections, sockets, descriptors, request buffers, nested subscription work, and background polling are bounded to keep memory, CPU, and storage use stable on resource-constrained TVs.</p>
 
