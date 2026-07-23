@@ -69,21 +69,25 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: alcyone-*
-          path: dist
-          merge-multiple: true
-      - name: Publish release assets
+      - name: Publish canonical release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${GITHUB_REF_NAME#v}"
           notes="docs/release-history/RELEASE_NOTES_${version}.md"
+          # Matrix jobs verify both independent builds; release the exact bytes
+          # referenced by the repository feed, manifests, and SHA256SUMS.
+          assets=(
+            "packages/Alcyone-XRay_${version}_all.ipk"
+            "packages/Alcyone-sing-box_${version}_all.ipk"
+          )
+          for asset in "${assets[@]}"; do
+            test -f "$asset"
+          done
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/*.ipk --clobber
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/*.ipk \
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
               --title "Alcyone ${version}" \
               --notes-file "$notes"
           fi
