@@ -1,0 +1,66 @@
+#!/bin/sh
+APP_DIR="/media/developer/apps/usr/palm/applications/@APP_ID@"
+DATA_DIR="@DATA_DIR@"
+CORE="@CORE@"
+LEGACY_DATA="/var/lib/incy"
+XRAY_DATA="/var/lib/alcyone"
+LEGACY_AUTOSTART="/var/lib/webosbrew/init.d/incy-vpn"
+AUTOSTART="/var/lib/webosbrew/init.d/@AUTOSTART@"
+
+mkdir -p "$DATA_DIR/bin" "$DATA_DIR/backup"
+
+# Stop a stale web importer so the next app launch loads this package's code.
+if [ -f "$DATA_DIR/alcyone-web.pid" ]; then
+  old_web_pid="$(cat "$DATA_DIR/alcyone-web.pid" 2>/dev/null || true)"
+  if [ -n "$old_web_pid" ] && [ -r "/proc/$old_web_pid/cmdline" ]; then
+    old_web_cmd="$(tr '\000' ' ' < "/proc/$old_web_pid/cmdline" 2>/dev/null || true)"
+    case "$old_web_cmd" in
+      *"$APP_DIR/web/alcyone-web.js"*) kill "$old_web_pid" 2>/dev/null || true ;;
+    esac
+  fi
+  rm -f "$DATA_DIR/alcyone-web.pid" 2>/dev/null || true
+fi
+
+# Preserve existing users on XRay upgrades and seed a separate sing-box store.
+if [ ! -f "$DATA_DIR/profiles.json" ]; then
+  if [ "$CORE" = "xray" ] && [ -f "$LEGACY_DATA/profiles.json" ]; then
+    cp "$LEGACY_DATA/profiles.json" "$DATA_DIR/profiles.json" 2>/dev/null || true
+  elif [ "$CORE" = "sing-box" ] && [ -f "$XRAY_DATA/profiles.json" ]; then
+    cp "$XRAY_DATA/profiles.json" "$DATA_DIR/profiles.json" 2>/dev/null || true
+  fi
+fi
+
+if [ "$CORE" = "xray" ]; then
+  bundled_cores="xray tun2socks"
+  for binary in $bundled_cores; do
+    if [ ! -x "$DATA_DIR/bin/$binary" ] && [ -x "$LEGACY_DATA/bin/$binary" ]; then
+      cp "$LEGACY_DATA/bin/$binary" "$DATA_DIR/bin/$binary" 2>/dev/null &&
+        chmod 755 "$DATA_DIR/bin/$binary" 2>/dev/null || true
+    fi
+  done
+else
+  bundled_cores="sing-box"
+fi
+
+for binary in $bundled_cores; do
+  if [ -f "$APP_DIR/bin/$binary" ]; then
+    cp "$APP_DIR/bin/$binary" "$DATA_DIR/bin/$binary" 2>/dev/null &&
+      chmod 755 "$DATA_DIR/bin/$binary" 2>/dev/null || true
+  fi
+  if [ -x "$DATA_DIR/bin/$binary" ]; then
+    cp "$DATA_DIR/bin/$binary" "$DATA_DIR/backup/$binary" 2>/dev/null || true
+  fi
+done
+
+# The discontinued XRay autostart must not compete for the same TUN device.
+if [ "$CORE" = "xray" ] && [ -f "$LEGACY_AUTOSTART" ]; then
+  rm -f "$LEGACY_AUTOSTART" 2>/dev/null || true
+  mkdir -p /var/lib/webosbrew/init.d
+  cat > "$AUTOSTART" <<EOS
+#!/bin/sh
+$APP_DIR/scripts/alcyonectl.sh start >$DATA_DIR/autostart.log 2>&1 &
+$APP_DIR/scripts/alcyonectl.sh web-start >$DATA_DIR/autostart-web.log 2>&1 &
+EOS
+  chmod +x "$AUTOSTART" 2>/dev/null || true
+fi
+exit 0

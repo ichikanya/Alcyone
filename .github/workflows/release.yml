@@ -1,0 +1,89 @@
+name: Build and release editions
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Syntax checks
+        run: |
+          node --check app/app.js
+          node --check app/web/alcyone-web.js
+          sh -n app/scripts/alcyonectl.sh
+          sh -n CONTROL/preinst
+          sh -n CONTROL/postinst
+          sh -n CONTROL/prerm
+          python -m py_compile build_ipk.py
+      - name: JavaScript tests
+        run: |
+          for test_file in tests/*.test.js; do
+            node "$test_file"
+          done
+      - name: Packaging tests
+        run: python tests/build-editions.test.py
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        edition:
+          - xray
+          - sing-box
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build ${{ matrix.edition }} edition
+        run: python build_ipk.py --edition "${{ matrix.edition }}" --output-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alcyone-${{ matrix.edition }}
+          path: dist/*.ipk
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: alcyone-*
+          path: dist
+          merge-multiple: true
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes="docs/release-history/RELEASE_NOTES_${version}.md"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.ipk --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.ipk \
+              --title "Alcyone ${version}" \
+              --notes-file "$notes"
+          fi

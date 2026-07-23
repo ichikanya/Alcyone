@@ -1,0 +1,14 @@
+#!/bin/sh
+DATA_DIR="@DATA_DIR@"
+CORE="@CORE@"
+VLESS_CORE="/media/developer/apps/usr/palm/applications/vless.m.vpn/xray-core"
+mkdir -p "$DATA_DIR/bin"
+if [ "$CORE" = "xray" ]; then
+  for binary in xray tun2socks; do
+    if [ -x "$VLESS_CORE/$binary" ] && [ ! -x "$DATA_DIR/bin/$binary" ]; then
+      cp "$VLESS_CORE/$binary" "$DATA_DIR/bin/$binary" 2>/dev/null &&
+        chmod 755 "$DATA_DIR/bin/$binary" 2>/dev/null || true
+    fi
+  done
+fi
+exit 0

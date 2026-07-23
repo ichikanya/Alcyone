@@ -1,0 +1,7 @@
+Package: @APP_ID@
+Version: @VERSION@
+Section: misc
+Priority: optional
+Architecture: all
+Maintainer: Alcyone <root@localhost>
+Description: @DESCRIPTION@

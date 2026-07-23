@@ -1,33 +1,57 @@
 {
   "paging": {
     "page": 1,
-    "count": 1,
+    "count": 2,
     "maxPage": 1,
-    "itemsTotal": 1
+    "itemsTotal": 2
   },
   "packages": [
     {
       "id": "com.alcyone.vpn",
-      "title": "Alcyone",
+      "title": "Alcyone XRay",
       "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
       "manifestUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/com.alcyone.vpn.manifest.json",
       "manifest": {
         "id": "com.alcyone.vpn",
-        "version": "3.1.7",
+        "version": "3.2.0",
         "type": "web",
-        "title": "Alcyone",
-        "appDescription": "VPN client with multi-protocol subscriptions for rooted LG webOS TVs.",
+        "title": "Alcyone XRay",
+        "appDescription": "XRay edition for large subscriptions, XHTTP, and complete configurations on rooted LG webOS TVs.",
         "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
         "sourceUrl": "https://github.com/ichikanya/Alcyone",
         "rootRequired": true,
-        "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/com.alcyone.vpn_3.1.7_all.ipk",
+        "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/Alcyone-XRay_3.2.0_all.ipk",
         "ipkHash": {
-          "sha256": "88a077fb46dfac636fc6d9a51511c198a059a6d316ae3f158a34015b1d1d5d89"
+          "sha256": "00011afbeb07415f502ef0bf5ce74113048d64c69541370bde684ed9d0e04569"
         },
-        "ipkSize": 15783782
+        "ipkSize": 15791722
       },
       "pool": "main",
-      "shortDescription": "VPN client with multi-protocol subscriptions for rooted LG webOS TVs.",
+      "shortDescription": "XRay edition for large subscriptions, XHTTP, and complete configurations.",
+      "fullDescriptionUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/full_description.html"
+    },
+    {
+      "id": "com.alcyone.vpn.singbox",
+      "title": "Alcyone sing-box",
+      "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
+      "manifestUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/com.alcyone.vpn.singbox.manifest.json",
+      "manifest": {
+        "id": "com.alcyone.vpn.singbox",
+        "version": "3.2.0",
+        "type": "web",
+        "title": "Alcyone sing-box",
+        "appDescription": "Low-resource sing-box edition with a native TUN tunnel for rooted LG webOS TVs.",
+        "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
+        "sourceUrl": "https://github.com/ichikanya/Alcyone",
+        "rootRequired": true,
+        "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/Alcyone-sing-box_3.2.0_all.ipk",
+        "ipkHash": {
+          "sha256": "a948ac37d3c4cb12bbf8a0166c589108bc1974d5bdb4cc9ff0ae4d5b0004d484"
+        },
+        "ipkSize": 11614274
+      },
+      "pool": "main",
+      "shortDescription": "Low-resource sing-box edition with one native TUN process.",
       "fullDescriptionUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/full_description.html"
     }
   ]

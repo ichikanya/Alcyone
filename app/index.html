@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Alcyone XRay</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <aside>
+      <div class="brand">
+        <img class="brandLogo" src="logo.png" alt="">
+        <div class="brandText">Alcyone <span id="editionBrand">XRay</span></div>
+      </div>
+      <button class="nav active" data-page="home">
+        <img class="ic off" src="icons/shield_filled_left_gray.svg" alt="">
+        <img class="ic on" src="icons/shield_filled_left_active.svg" alt="">
+        <span data-i18n="nav.home">Главная</span>
+      </button>
+      <button class="nav" data-page="servers">
+        <img class="ic off" src="icons/dns_left_gray.svg" alt="">
+        <img class="ic on" src="icons/dns_left_active.svg" alt="">
+        <span data-i18n="nav.servers">Сервера</span>
+      </button>
+      <button class="nav" data-page="settings">
+        <img class="ic off" src="icons/settings_left_gray.svg" alt="">
+        <img class="ic on" src="icons/settings_left_active.svg" alt="">
+        <span data-i18n="nav.settings">Настройки</span>
+      </button>
+      <div class="ver" id="editionVersion">XRay · v3.2.0</div>
+    </aside>
+    <main>
+      <section id="home" class="page active">
+        <header class="homeHeader">
+          <b data-i18n="home.title">VPN</b>
+          <span data-i18n="home.subtitle">Защищённое подключение телевизора</span>
+        </header>
+        <div class="homeShell">
+          <div id="homeStage" class="homeStage">
+            <button id="power" class="power" aria-label="VPN" disabled>
+              <img class="pw-off" src="icons/power_gray.svg" alt="">
+              <img class="pw-on" src="icons/shield_outlined_active.svg" alt="">
+            </button>
+            <div id="stateText" class="homeState" data-i18n="common.checking">Проверка...</div>
+            <div id="hint" data-i18n="home.tapConnect">Нажмите для подключения</div>
+          </div>
+          <div class="homeInfo">
+            <div id="current" class="currentCard empty" data-i18n="home.noServer">Сервер не выбран</div>
+            <div class="webbox">
+              <div class="homeWebBody"><div class="homeWebTitle"><img class="homeWebIcon" src="icons/row_web.svg" alt=""><b data-i18n="home.webTitle">Веб-импорт подписок</b></div><span id="webUrl" data-i18n="home.webStarting">запускается...</span><small data-i18n="home.webHint">Открой адрес в браузере телефона или ПК, чтобы добавить подписки и серверы</small></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="servers" class="page">
+        <header>
+          <b data-i18n="nav.servers">Сервера</b>
+          <span id="count" data-i18n="servers.count0">0 серверов</span>
+        </header>
+        <div class="tools">
+          <input id="search" data-i18n-ph="servers.search" placeholder="Поиск серверов...">
+          <button id="pingServers" data-i18n="servers.ping">Пинг серверов</button>
+          <button id="refresh" data-i18n="servers.refresh">Обновить</button>
+          <button id="subUpdate" data-i18n="servers.subUpdate">Обновить подписки</button>
+        </div>
+        <div class="listOptions">
+          <div class="chips" id="protoChips">
+            <button class="chip active" data-proto="all" data-i18n="servers.all">Все</button>
+            <button class="chip" data-proto="vless">VLESS</button>
+            <button class="chip" data-proto="vmess">VMess</button>
+            <button class="chip" data-proto="trojan">Trojan</button>
+            <button class="chip" data-proto="ss">SS</button>
+            <button class="chip" data-proto="socks">SOCKS5</button>
+            <button class="chip" data-proto="hysteria2">Hysteria2</button>
+          </div>
+          <div class="sortControls" aria-label="Сортировка">
+            <span data-i18n="servers.sort">Сортировка</span>
+            <button class="sortBtn active" data-sort="name" data-i18n="servers.sortName">Имя</button>
+            <button class="sortBtn" data-sort="ping" data-i18n="servers.sortPing">Пинг</button>
+          </div>
+        </div>
+        <div id="serverList" class="list"></div>
+      </section>
+      <section id="settings" class="page">
+        <header>
+          <b data-i18n="nav.settings">Настройки</b>
+          <span data-i18n="settings.sub">Управление приложением</span>
+        </header>
+        <div class="sectionTitle">VPN</div>
+        <div class="rows">
+          <button class="row" id="rowRestart">
+            <img class="rIcon" src="icons/row_restart.svg" alt="">
+            <span class="rBody"><span class="rTitle" data-i18n="settings.restart">Перезапустить VPN</span><span class="rSub" id="restartSub" data-i18n="settings.restartSub">Переподключить текущий сервер</span></span>
+          </button>
+          <button class="row" id="rowCheckIp">
+            <img class="rIcon" src="icons/row_globe.svg" alt="">
+            <span class="rBody"><span class="rTitle" data-i18n="settings.checkIp">Проверить внешний IP</span><span class="rSub" id="checkIpSub" data-i18n="settings.checkIpSub">Показать адрес напрямую и через VPN</span></span>
+          </button>
+          <button class="row" id="rowAutostart">
+            <img class="rIcon" src="icons/row_bolt.svg" alt="">
+            <span class="rBody"><span class="rTitle" data-i18n="settings.autostart">Автозапуск VPN</span><span class="rSub" data-i18n="settings.autostartSub">Подключаться при включении телевизора</span></span>
+            <span class="rState" id="autostartState" data-i18n="common.checking">Проверка...</span>
+          </button>
+          <button class="row" id="rowWeb">
+            <img class="rIcon" src="icons/row_web.svg" alt="">
+            <span class="rBody"><span class="rTitle" data-i18n="settings.web">Веб-интерфейс</span><span class="rSub" id="webSub" data-i18n="settings.webSub">Импорт подписок с телефона или ПК</span></span>
+            <span class="rState" id="webState" data-i18n="common.checking">Проверка...</span>
+          </button>
+        </div>
+        <div class="sectionTitle" data-i18n="settings.secInterface">Интерфейс</div>
+        <div class="rows">
+          <button class="row" id="rowLang">
+            <img class="rIcon" src="icons/row_globe.svg" alt="">
+            <span class="rBody"><span class="rTitle" data-i18n="settings.lang">Язык</span><span class="rSub" data-i18n="settings.langSub">Русский · English · авто по региону</span></span>
+            <span class="rState" id="langState">Авто</span>
+          </button>
+        </div>
+        <div class="sectionTitle" data-i18n="settings.secLog">Журнал</div>
+        <div class="rows">
+          <button class="row" id="rowLogs">
+            <img class="rIcon" src="icons/row_terminal.svg" alt="">
+            <span class="rBody"><span class="rTitle" data-i18n="logs.title">Логи туннеля</span><span class="rSub" data-i18n="logs.sub">Терминальный просмотрщик логов</span></span>
+            <img class="rChev" src="icons/chev_right.svg" alt="">
+          </button>
+        </div>
+        <div class="sectionTitle" data-i18n="about.title">О приложении</div>
+        <div class="rows">
+          <button class="row" id="rowAbout">
+            <img class="rIcon" src="icons/row_info.svg" alt="">
+            <span class="rBody"><span class="rTitle" data-i18n="about.title">О приложении</span><span class="rSub" data-i18n="about.rowSub">Alcyone XRay 3.2.0 · описание и связь</span></span>
+            <img class="rChev" src="icons/chev_right.svg" alt="">
+          </button>
+          <button class="row" id="rowDonate">
+            <img class="rIcon" src="icons/row_heart.svg" alt="">
+            <span class="rBody"><span class="rTitle" data-i18n="donate.title">Поддержать приложение</span><span class="rSub" data-i18n="donate.rowSub">QR-код для доната</span></span>
+            <img class="rChev" src="icons/chev_right.svg" alt="">
+          </button>
+        </div>
+      </section>
+      <section id="logs" class="page">
+        <header class="subpageHeader">
+          <button class="backBtn" data-back="settings" data-i18n="common.back">‹ Назад</button>
+          <div class="subpageHeading">
+            <b data-i18n="logs.title">Логи туннеля</b>
+            <span data-i18n="logs.sub">Терминальный просмотрщик логов</span>
+          </div>
+        </header>
+        <div class="tools">
+          <button id="logsRefresh" data-i18n="logs.refresh">Обновить логи</button>
+          <button id="clearLog" data-i18n="logs.clear">Очистить</button>
+          <button id="freezeLog" data-i18n="logs.freeze">Зафиксировать</button>
+        </div>
+        <pre id="log" class="term" tabindex="0"></pre>
+      </section>
+      <section id="about" class="page">
+        <header class="subpageHeader">
+          <button class="backBtn" data-back="settings" data-i18n="common.back">‹ Назад</button>
+          <div class="subpageHeading"><b data-i18n="about.title">О приложении</b></div>
+        </header>
+        <div class="aboutCard">
+          <img class="aboutLogo" src="logo.png" alt="">
+          <div class="aboutBody">
+            <div class="aboutName">Alcyone <span id="aboutVersion">XRay · v3.2.0</span></div>
+            <p class="aboutText" data-i18n="about.text">VPN-клиент для телевизоров LG webOS с root-доступом. Импортирует подписки VLESS, VMess, Trojan, Shadowsocks, SOCKS5 и Hysteria2, поднимает туннель через xray и tun2socks и направляет весь трафик телевизора через выбранный сервер. Подписки и серверы добавляются через веб-интерфейс с телефона или ПК.</p>
+          </div>
+        </div>
+        <div class="rows">
+          <button class="row" id="rowTg">
+            <img class="rIcon" src="icons/row_send.svg" alt="">
+            <span class="rBody"><span class="rTitle">Telegram</span><span class="rSub" data-i18n="about.tgSub">Группа для связи, новостей и поддержки</span></span>
+            <span class="rState on">@AlcyoneVPN</span>
+          </button>
+          <button class="row" id="rowDonate2">
+            <img class="rIcon" src="icons/row_heart.svg" alt="">
+            <span class="rBody"><span class="rTitle" data-i18n="donate.title">Поддержать приложение</span><span class="rSub" data-i18n="donate.rowSub">QR-код для доната</span></span>
+            <img class="rChev" src="icons/chev_right.svg" alt="">
+          </button>
+        </div>
+      </section>
+      <section id="donate" class="page">
+        <header class="subpageHeader">
+          <button class="backBtn" data-back="settings" data-i18n="common.back">‹ Назад</button>
+          <div class="subpageHeading"><b data-i18n="donate.title">Поддержать приложение</b></div>
+        </header>
+        <div class="donateWrap">
+          <div class="qrCard"><img class="qr" src="qr.png" alt="QR"></div>
+          <div class="donateInfo">
+            <b data-i18n="donate.thanks">Спасибо, что пользуешься Alcyone!</b>
+            <p data-i18n="donate.text1">Приложение бесплатное и развивается на энтузиазме. Если оно тебе полезно — отсканируй QR-код камерой телефона и поддержи разработку.</p>
+            <p data-i18n="donate.text2">Пожелания и вопросы — в Telegram-группе.</p>
+            <span class="tgBadge">@AlcyoneVPN</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="edition.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

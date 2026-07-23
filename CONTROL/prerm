@@ -1,0 +1,3 @@
+#!/bin/sh
+/media/developer/apps/usr/palm/applications/@APP_ID@/scripts/alcyonectl.sh stop >/dev/null 2>&1 || true
+exit 0

@@ -1,23 +1,21 @@
-<h2>Alcyone 3.1.7</h2>
+<h2>Alcyone 3.2.0 for LG webOS</h2>
 
-<p>Alcyone is a VPN client for rooted LG webOS TVs. It runs VPN directly on the television through xray and tun2socks, without requiring a separate router, phone, or computer as a gateway.</p>
+<p>Alcyone is a VPN client for rooted LG webOS TVs. It runs VPN directly on the television without requiring a separate router, phone, or computer as a gateway.</p>
 
-<p>The application supports VLESS/XHTTP, VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2 profiles. Subscriptions and servers can be imported from a phone or computer through the built-in web interface.</p>
+<p>Version 3.2.0 is available as two independently installable editions with the same TV-optimized interface, subscription importer, server selection, ping checks, autostart, external-IP checks, logs, Russian/English localization, and D-pad navigation.</p>
 
-<p>The Home screen uses a TV-optimized connection layout with a prominent VPN control, clear connection state, centered glow, and a compact selected-location badge that adapts to short and long server names. Server-list navigation preserves the current position and scrolls only as far as needed to reveal a focused server.</p>
+<h3>XRay Edition</h3>
 
-<p>When Alcyone starts or returns to the foreground, it restores the real VPN service state. Disconnecting fully removes VPN processes and TUN network state, then restarts the local web control interface on the restored connection.</p>
+<p>Alcyone XRay keeps the established application identity and all existing data. It uses the current Xray 26.3.27 core with tun2socks and is intended for large subscriptions, many configurations, XHTTP, and complete XRay configs containing routing rules or balancers.</p>
 
-<p>Version 3.1.7 prevents gradual Xray descriptor exhaustion by multiplexing XHTTP requests, expiring idle and half-closed connections sooner, and giving only Xray bounded additional descriptor headroom. This prevents repeated <code>too many open files</code> failures from slowing down and eventually freezing the TV.</p>
+<h3>sing-box Edition</h3>
 
-<p>Selecting a different server while VPN is active now performs a complete disconnect and reconnect with the new profile. The log viewer can physically clear all managed log files and reports current descriptor use for Xray, tun2socks, and the web service.</p>
+<p>Alcyone sing-box uses a separate application identity and data directory. Its sing-box 1.13.14 core is trimmed to the required QUIC and uTLS capabilities and runs one native system-TUN process, avoiding gVisor and optional service/API modules for lower process, descriptor, and startup overhead on low-powered TVs.</p>
 
-<p>Tunnel logs, idle connections, sockets, descriptors, request buffers, nested subscription work, and background polling are bounded to keep memory, CPU, and storage use stable on resource-constrained TVs.</p>
+<p>Both editions support VLESS, VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2 links. XHTTP and complete XRay routing/balancer semantics are available in the XRay edition.</p>
 
-<p>Servers can be pinged on demand from the TV and sorted by measured latency or name. Color-coded indicators show good, average, and poor latency, while unavailable servers are marked as n/a.</p>
+<p>Subscriptions and servers can be imported from a phone or computer through the built-in web interface. Compatibility headers and User-Agent profiles help retrieve subscriptions intended for specific VPN clients.</p>
 
-<p>Compatibility headers and User-Agent profiles can help load subscriptions that are normally available only inside specific VPN clients. Other features include server selection, subscription updates, VPN autostart, external IP checks, country flags, and tunnel logs.</p>
+<p>Tunnel logs, idle connections, sockets, descriptors, request buffers, nested subscription work, and background polling are bounded to keep resource use stable.</p>
 
-<p>The interface is available in Russian and English and supports full D-pad navigation on LG remotes with or without a pointer.</p>
-
-<p><strong>Root access is required.</strong> When reporting a problem, include the TV model and webOS version.</p>
+<p><strong>Root access is required.</strong> Both editions can be installed together, but only one TV-wide VPN tunnel should run at a time. When reporting a problem, include the TV model, webOS version, and edition.</p>

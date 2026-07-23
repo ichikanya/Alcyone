@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Alcyone TV Preview</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <aside>
+      <div class="brand"><img class="brandLogo" src="logo.png" alt=""><div class="brandText">Alcyone <span>XRay</span></div></div>
+      <button class="nav active" type="button" data-page="home"><img class="ic off" src="icons/shield_filled_left_gray.svg" alt=""><img class="ic on" src="icons/shield_filled_left_active.svg" alt=""><span>Главная</span></button>
+      <button class="nav" type="button" data-page="servers"><img class="ic off" src="icons/dns_left_gray.svg" alt=""><img class="ic on" src="icons/dns_left_active.svg" alt=""><span>Серверы</span></button>
+      <button class="nav" type="button" data-page="settings"><img class="ic off" src="icons/settings_left_gray.svg" alt=""><img class="ic on" src="icons/settings_left_active.svg" alt=""><span>Настройки</span></button>
+      <div class="ver">XRay · v3.2.0 · preview</div>
+    </aside>
+    <main>
+      <section id="home" class="page active">
+        <header class="homeHeader"><b>VPN</b><span>Защищённое подключение телевизора</span></header>
+        <div class="homeShell">
+          <div id="homeStage" class="homeStage">
+            <button id="power" class="power" type="button" aria-label="Включить или выключить VPN"><img class="pw-off" src="icons/power_gray.svg" alt=""><img class="pw-on" src="icons/shield_outlined_active.svg" alt=""></button>
+            <div id="stateText" class="homeState">VPN выключен</div>
+            <div id="hint">Нажмите для подключения</div>
+          </div>
+          <div class="homeInfo">
+            <div id="current" class="currentCard"></div>
+            <div class="webbox">
+              <div class="homeWebBody">
+                <div class="homeWebTitle"><img class="homeWebIcon" src="icons/row_web.svg" alt=""><b>Веб-импорт подписок</b></div>
+                <span id="webUrl">http://192.168.1.100:8080</span>
+                <small>Открой адрес в браузере телефона или ПК, чтобы добавить подписки и серверы</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="servers" class="page">
+        <header><b>Серверы</b><span id="count">5 серверов</span></header>
+        <div class="tools">
+          <input id="search" placeholder="Поиск серверов...">
+          <button id="pingServers" type="button">Пинг серверов</button>
+          <button id="refresh" type="button">Обновить</button>
+          <button id="subUpdate" type="button">Обновить подписки</button>
+        </div>
+        <div class="listOptions">
+          <div class="chips" id="protoChips">
+            <button class="chip active" type="button" data-proto="all">Все</button>
+            <button class="chip" type="button" data-proto="vless">VLESS</button>
+            <button class="chip" type="button" data-proto="vmess">VMess</button>
+            <button class="chip" type="button" data-proto="trojan">Trojan</button>
+            <button class="chip" type="button" data-proto="ss">SS</button>
+          </div>
+          <div class="sortControls"><span>Сортировка</span><button class="sortBtn active" type="button">Имя</button><button class="sortBtn" type="button">Пинг</button></div>
+        </div>
+        <div id="serverList" class="list"></div>
+      </section>
+
+      <section id="settings" class="page">
+        <header><b>Настройки</b><span>Управление приложением</span></header>
+        <div class="sectionTitle">VPN</div>
+        <div class="rows">
+          <button class="row" type="button"><img class="rIcon" src="icons/row_restart.svg" alt=""><span class="rBody"><span class="rTitle">Перезапустить VPN</span><span class="rSub">Переподключить текущий сервер</span></span></button>
+          <button class="row" type="button"><img class="rIcon" src="icons/row_globe.svg" alt=""><span class="rBody"><span class="rTitle">Проверить внешний IP</span><span class="rSub">Показать адрес напрямую и через VPN</span></span></button>
+          <button class="row" id="previewAutostart" type="button"><img class="rIcon" src="icons/row_bolt.svg" alt=""><span class="rBody"><span class="rTitle">Автозапуск VPN</span><span class="rSub">Подключаться при включении телевизора</span></span><span class="rState">Выключен</span></button>
+          <button class="row" type="button"><img class="rIcon" src="icons/row_web.svg" alt=""><span class="rBody"><span class="rTitle">Веб-интерфейс</span><span class="rSub">http://192.168.1.100:8080</span></span><span class="rState on">Запущен</span></button>
+        </div>
+        <div class="sectionTitle">Интерфейс</div>
+        <div class="rows"><button class="row" type="button"><img class="rIcon" src="icons/row_globe.svg" alt=""><span class="rBody"><span class="rTitle">Язык</span><span class="rSub">Русский · English · авто по региону</span></span><span class="rState">Авто</span></button></div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var profiles = [
+        { id: 'nl', name: 'Нидерланды — Амстердам Premium', country: 'nl', proto: 'vless', meta: 'Alcyone Europe · подписка', ping: 42 },
+        { id: 'de', name: 'Германия — Frankfurt Streaming Optimized', country: 'de', proto: 'vless', meta: 'Alcyone Europe · подписка', ping: 58 },
+        { id: 'fi', name: 'Финляндия — Helsinki', country: 'fi', proto: 'vmess', meta: 'Nordic VPN · подписка', ping: 71 },
+        { id: 'us', name: 'United States — New York', country: 'us', proto: 'trojan', meta: 'Global Premium · подписка', ping: 126 },
+        { id: 'jp', name: 'Japan — Tokyo', country: 'jp', proto: 'ss', meta: 'Asia Pacific · подписка', ping: 238 }
+      ];
+      var selectedId = 'nl';
+      var running = false;
+      var proto = 'all';
+
+      function byId(id) { return document.getElementById(id); }
+      function selectedProfile() {
+        var i;
+        for (i = 0; i < profiles.length; i++) if (profiles[i].id === selectedId) return profiles[i];
+        return profiles[0];
+      }
+      function currentHtml(profile) {
+        return '<span class="currentServer"><span class="currentFlagFrame"><img class="flag" src="flags/' + profile.country + '.svg" alt=""></span><span class="currentServerBody"><b>' + profile.name + '</b></span></span>';
+      }
+      function renderHome() {
+        var profile = selectedProfile();
+        byId('current').innerHTML = currentHtml(profile);
+        byId('power').className = 'power' + (running ? ' on' : '');
+        byId('homeStage').className = 'homeStage' + (running ? ' connected' : '');
+        byId('stateText').className = 'homeState' + (running ? ' on' : '');
+        byId('stateText').textContent = running ? 'VPN включён' : 'VPN выключен';
+        byId('hint').textContent = running ? 'Нажмите для отключения' : 'Нажмите для подключения';
+      }
+      function pingClass(value) { return value <= 100 ? 'good' : (value <= 300 ? 'average' : 'poor'); }
+      function renderServers() {
+        var list = byId('serverList');
+        var query = byId('search').value.toLowerCase();
+        var html = '';
+        var shown = 0;
+        var i, profile, active;
+        for (i = 0; i < profiles.length; i++) {
+          profile = profiles[i];
+          if (proto !== 'all' && profile.proto !== proto) continue;
+          if (query && (profile.name + ' ' + profile.meta).toLowerCase().indexOf(query) < 0) continue;
+          shown++;
+          active = profile.id === selectedId;
+          html += '<div tabindex="0" class="card' + (active ? ' active' : '') + '" data-id="' + profile.id + '">' +
+            '<img class="flag" src="flags/' + profile.country + '.svg" alt="">' +
+            '<div class="cardBody"><div class="serverTitle">' + profile.name + '</div><div class="meta">' + profile.meta + '</div></div>' +
+            '<span class="badge">' + profile.proto.toUpperCase() + '</span>' +
+            '<span class="pingCell ' + pingClass(profile.ping) + '"><span class="pingDot"></span>' + profile.ping + ' ms</span>' +
+            '<div class="rowActions"><button type="button" data-select="' + profile.id + '">' + (active ? 'Выбран' : 'Выбрать') + '</button></div></div>';
+        }
+        list.innerHTML = html || '<div class="empty-card"><b>Серверы не найдены</b></div>';
+        byId('count').textContent = shown + ' серверов';
+      }
+      function showPage(id) {
+        var pages = document.querySelectorAll('.page');
+        var nav = document.querySelectorAll('.nav');
+        var i;
+        for (i = 0; i < pages.length; i++) pages[i].className = 'page' + (pages[i].id === id ? ' active' : '');
+        for (i = 0; i < nav.length; i++) nav[i].className = 'nav' + (nav[i].getAttribute('data-page') === id ? ' active' : '');
+      }
+
+      byId('power').onclick = function () {
+        var button = this;
+        button.disabled = true;
+        byId('stateText').textContent = 'Проверка...';
+        setTimeout(function () { running = !running; button.disabled = false; renderHome(); button.focus(); }, 300);
+      };
+      document.querySelector('aside').onclick = function (event) {
+        var button = event.target;
+        while (button && button !== this && !button.getAttribute('data-page')) button = button.parentNode;
+        if (button && button.getAttribute('data-page')) showPage(button.getAttribute('data-page'));
+      };
+      byId('serverList').onclick = function (event) {
+        var id = event.target.getAttribute('data-select');
+        if (!id) return;
+        selectedId = id;
+        renderHome();
+        renderServers();
+      };
+      byId('search').oninput = renderServers;
+      byId('protoChips').onclick = function (event) {
+        var value = event.target.getAttribute('data-proto');
+        var chips, i;
+        if (!value) return;
+        proto = value;
+        chips = this.querySelectorAll('.chip');
+        for (i = 0; i < chips.length; i++) chips[i].className = 'chip' + (chips[i] === event.target ? ' active' : '');
+        renderServers();
+      };
+      byId('pingServers').onclick = function () { this.textContent = 'Пинг обновлён'; renderServers(); };
+      byId('refresh').onclick = function () { this.textContent = 'Обновлено'; };
+      byId('subUpdate').onclick = function () { this.textContent = 'Подписки обновлены'; };
+      byId('previewAutostart').onclick = function () {
+        var state = this.querySelector('.rState');
+        var on = state.className.indexOf(' on') < 0;
+        state.className = 'rState' + (on ? ' on' : '');
+        state.textContent = on ? 'Включен' : 'Выключен';
+      };
+
+      renderHome();
+      renderServers();
+      byId('power').focus();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "id": "com.alcyone.vpn",
+  "version": "3.2.0",
+  "vendor": "Alcyone",
+  "type": "web",
+  "main": "index.html",
+  "title": "Alcyone XRay",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "appDescription": "Alcyone XRay VPN client with VLESS/XHTTP, VMess, Trojan, Shadowsocks, SOCKS5 and Hysteria2 subscriptions for rooted LG webOS TVs.",
+  "bgColor": "#060211",
+  "disableBackHistoryAPI": true,
+  "handlesRelaunch": false,
+  "uiRevision": 2,
+  "mediumLargeIcon": "mediumLargeIcon.png",
+  "extraLargeIcon": "extraLargeIcon.png",
+  "bgImage": "bgImage.png",
+  "imageForRecents": "imageForRecents.png",
+  "iconColor": "#060211"
+}
