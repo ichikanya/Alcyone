@@ -314,7 +314,7 @@ def parse_args():
     )
     parser.add_argument(
         "--output-dir",
-        default=os.path.join(ROOT, "release-assets"),
+        default=os.path.join(ROOT, "dist"),
         help="directory for generated IPKs",
     )
     return parser.parse_args()

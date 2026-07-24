@@ -42,8 +42,8 @@ python build_ipk.py --edition all
 Artifacts are written to:
 
 ```text
-release-assets/Alcyone-XRay_3.2.0_all.ipk
-release-assets/Alcyone-sing-box_3.2.0_all.ipk
+dist/Alcyone-XRay_3.2.0_all.ipk
+dist/Alcyone-sing-box_3.2.0_all.ipk
 ```
 
 The builder is deterministic and injects edition-specific metadata and binaries into the shared `app/` source. Core provenance and hashes are documented in [cores/README.md](cores/README.md).
