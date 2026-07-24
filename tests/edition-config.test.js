@@ -24,7 +24,7 @@ var window = {
     dataDir: '/var/lib/alcyone-singbox',
     editionName: 'sing-box Edition',
     title: 'Alcyone sing-box',
-    version: '3.2.0',
+    version: '3.2.1',
     webPort: 8081
   },
   localStorage: { getItem: function () { return null; } }

@@ -6,6 +6,6 @@ window.ALCYONE_EDITION = {
   dataDir: '/var/lib/alcyone',
   editionName: 'XRay Edition',
   title: 'Alcyone XRay',
-  version: '3.2.0',
+  version: '3.2.1',
   webPort: 8080
 };

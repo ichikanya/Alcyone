@@ -1,15 +1,15 @@
 {
   "id": "com.alcyone.vpn.singbox",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "type": "web",
   "title": "Alcyone sing-box",
   "appDescription": "Low-resource sing-box edition with a native TUN tunnel for rooted LG webOS TVs.",
   "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
   "sourceUrl": "https://github.com/ichikanya/Alcyone",
   "rootRequired": true,
-  "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/Alcyone-sing-box_3.2.0_all.ipk",
+  "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/Alcyone-sing-box_3.2.1_all.ipk",
   "ipkHash": {
-    "sha256": "a948ac37d3c4cb12bbf8a0166c589108bc1974d5bdb4cc9ff0ae4d5b0004d484"
+    "sha256": "8332292ee7aa2578029cb2ddac73cd88c3c56f531c66a74fa3676ff2edf91938"
   },
-  "ipkSize": 11614274
+  "ipkSize": 11614374
 }

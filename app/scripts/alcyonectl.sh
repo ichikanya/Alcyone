@@ -9,7 +9,7 @@ if [ -f "$EDITION_CONF" ]; then . "$EDITION_CONF"; fi
 : "${ALCYONE_DATA_DIR:=/var/lib/alcyone}"
 : "${ALCYONE_EDITION_NAME:=XRay Edition}"
 : "${ALCYONE_TITLE:=Alcyone XRay}"
-: "${ALCYONE_VERSION:=3.2.0}"
+: "${ALCYONE_VERSION:=3.2.1}"
 : "${ALCYONE_WEB_PORT:=8080}"
 APP_DIR="/media/developer/apps/usr/palm/applications/$ALCYONE_APP_ID"
 DATA_DIR="$ALCYONE_DATA_DIR"

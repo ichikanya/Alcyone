@@ -1,4 +1,4 @@
-/* Alcyone 3.2.0 for LG webOS rooted TVs */
+/* Alcyone 3.2.1 for LG webOS rooted TVs */
 (function () {
   'use strict';
   var EDITION = window.ALCYONE_EDITION || {
@@ -9,7 +9,7 @@
     dataDir: '/var/lib/alcyone',
     editionName: 'XRay Edition',
     title: 'Alcyone XRay',
-    version: '3.2.0',
+    version: '3.2.1',
     webPort: 8080
   };
   var APP_ID = EDITION.appId;

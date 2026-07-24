@@ -15,3 +15,5 @@ e0642b62fae7713ec17b482fb77d6e20a376909df611efa1b20e26e926a5d211  com.alcyone.vp
 88a077fb46dfac636fc6d9a51511c198a059a6d316ae3f158a34015b1d1d5d89  com.alcyone.vpn_3.1.7_all.ipk
 00011afbeb07415f502ef0bf5ce74113048d64c69541370bde684ed9d0e04569  Alcyone-XRay_3.2.0_all.ipk
 a948ac37d3c4cb12bbf8a0166c589108bc1974d5bdb4cc9ff0ae4d5b0004d484  Alcyone-sing-box_3.2.0_all.ipk
+da6394faa9d57f4fc768b985609af1eb98452488eef6a66c832b81c4df79fa4e  Alcyone-XRay_3.2.1_all.ipk
+8332292ee7aa2578029cb2ddac73cd88c3c56f531c66a74fa3676ff2edf91938  Alcyone-sing-box_3.2.1_all.ipk

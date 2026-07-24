@@ -22,7 +22,7 @@ function requestOnce(url, redirects) {
       port: u.port || undefined,
       path: u.pathname + u.search,
       method: 'GET',
-      headers: { 'User-Agent': 'Alcyone-webOS/3.2.0' },
+      headers: { 'User-Agent': 'Alcyone-webOS/3.2.1' },
       rejectUnauthorized: false,
     };
     const req = lib.request(opts, (res) => {

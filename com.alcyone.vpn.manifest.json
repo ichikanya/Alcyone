@@ -1,15 +1,15 @@
 {
   "id": "com.alcyone.vpn",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "type": "web",
   "title": "Alcyone XRay",
   "appDescription": "XRay edition for large subscriptions, XHTTP, and complete configurations on rooted LG webOS TVs.",
   "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
   "sourceUrl": "https://github.com/ichikanya/Alcyone",
   "rootRequired": true,
-  "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/Alcyone-XRay_3.2.0_all.ipk",
+  "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/Alcyone-XRay_3.2.1_all.ipk",
   "ipkHash": {
-    "sha256": "00011afbeb07415f502ef0bf5ce74113048d64c69541370bde684ed9d0e04569"
+    "sha256": "da6394faa9d57f4fc768b985609af1eb98452488eef6a66c832b81c4df79fa4e"
   },
-  "ipkSize": 15791722
+  "ipkSize": 15791860
 }

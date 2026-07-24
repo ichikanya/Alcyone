@@ -13,7 +13,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILDER = os.path.join(ROOT, "build_ipk.py")
-VERSION = "3.2.0"
+VERSION = "3.2.1"
 
 
 def sha256(data):
@@ -75,6 +75,10 @@ def verify(path, expected):
     assert appinfo["id"] == expected["app_id"]
     assert appinfo["version"] == VERSION
     assert appinfo["title"] == expected["title"]
+    packageinfo_path = "usr/palm/packages/" + expected["app_id"] + "/packageinfo.json"
+    packageinfo = json.loads(data[packageinfo_path].decode("utf-8"))
+    assert packageinfo == {"app": expected["app_id"], "services": []}
+    assert data_modes[packageinfo_path] == 0o644
     edition = data[prefix + "edition.js"].decode("utf-8")
     assert expected["core"] in edition
     assert expected["data_dir"] in edition

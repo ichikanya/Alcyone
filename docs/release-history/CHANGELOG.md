@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.2.1
+
+- Added the standard webOS `packageinfo.json` metadata to both edition IPKs so Homebrew compatibility verification can inspect them.
+- Kept the VPN cores, application behavior, identities, storage paths, and UI unchanged.
+
 ## 3.2.0
 
 - Added independently buildable and installable XRay and sing-box editions from one shared application source.

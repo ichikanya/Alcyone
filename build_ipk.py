@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(ROOT, "app")
 CONTROL = os.path.join(ROOT, "CONTROL")
 CORES = os.path.join(ROOT, "cores")
-VERSION = "3.2.0"
+VERSION = "3.2.1"
 MTIME = 1700000000
 
 EDITIONS = {
@@ -255,12 +255,20 @@ def is_text_file(relative):
 
 def build_data_tar(edition):
     prefix = "usr/palm/applications/" + edition["app_id"]
+    package_prefix = "usr/palm/packages/" + edition["app_id"]
     overrides = app_overrides(edition)
     directories, files = app_entries(overrides)
     executable_files = set(edition["binaries"])
     executable_files.add("scripts/alcyonectl.sh")
     buffer = io.BytesIO()
-    for directory in ("usr", "usr/palm", "usr/palm/applications", prefix):
+    for directory in (
+        "usr",
+        "usr/palm",
+        "usr/palm/applications",
+        prefix,
+        "usr/palm/packages",
+        package_prefix,
+    ):
         tar_add_dir(buffer, directory)
     for relative in directories:
         tar_add_dir(buffer, prefix + "/" + relative)
@@ -273,6 +281,12 @@ def build_data_tar(edition):
             data = normalize_text(data)
         mode = 0o755 if relative in executable_files else 0o644
         tar_add_file(buffer, prefix + "/" + relative, data, mode)
+    packageinfo = json.dumps(
+        {"app": edition["app_id"], "services": []},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8") + b"\n"
+    tar_add_file(buffer, package_prefix + "/packageinfo.json", packageinfo, 0o644)
     tar_finish(buffer)
     return buffer.getvalue()
 
