@@ -1,0 +1,4 @@
+#profile-title: Subscription expired
+#profile-update-interval: 1
+#support-url: https://panel.example.test/renew
+vless://00000000-0000-4000-8000-0000000000ff@expired.example.test:443?security=tls&type=grpc&serviceName=fixture-expired#%D0%9F%D0%BE%D0%B4%D0%BF%D0%B8%D1%81%D0%BA%D0%B0%20%D0%B8%D1%81%D1%82%D0%B5%D0%BA%D0%BB%D0%B0

@@ -13,18 +13,18 @@
       "manifestUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/com.alcyone.vpn.manifest.json",
       "manifest": {
         "id": "com.alcyone.vpn",
-        "version": "3.2.1",
+        "version": "4.0.3",
         "type": "web",
         "title": "Alcyone XRay",
         "appDescription": "XRay edition for large subscriptions, XHTTP, and complete configurations on rooted LG webOS TVs.",
         "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
         "sourceUrl": "https://github.com/ichikanya/Alcyone",
         "rootRequired": true,
-        "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/Alcyone-XRay_3.2.1_all.ipk",
+        "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.0.3/Alcyone-XRay_4.0.3.ipk",
         "ipkHash": {
-          "sha256": "da6394faa9d57f4fc768b985609af1eb98452488eef6a66c832b81c4df79fa4e"
+          "sha256": "c78fe1c9dcb96123d78dfb3ab079ec1eb454ab7c7f86f08ef9c14b106baa8906"
         },
-        "ipkSize": 15791860
+        "ipkSize": 22020726
       },
       "pool": "main",
       "shortDescription": "XRay edition for large subscriptions, XHTTP, and complete configurations.",
@@ -37,18 +37,18 @@
       "manifestUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/com.alcyone.vpn.singbox.manifest.json",
       "manifest": {
         "id": "com.alcyone.vpn.singbox",
-        "version": "3.2.1",
+        "version": "4.0.3",
         "type": "web",
         "title": "Alcyone sing-box",
         "appDescription": "Low-resource sing-box edition with a native TUN tunnel for rooted LG webOS TVs.",
         "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
         "sourceUrl": "https://github.com/ichikanya/Alcyone",
         "rootRequired": true,
-        "ipkUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/Alcyone-sing-box_3.2.1_all.ipk",
+        "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.0.3/Alcyone-sing-box_4.0.3.ipk",
         "ipkHash": {
-          "sha256": "8332292ee7aa2578029cb2ddac73cd88c3c56f531c66a74fa3676ff2edf91938"
+          "sha256": "2e286a5310fdcc2fc859a6b0ebadf2017e532476b6a877e95e31adf1ed8bf01b"
         },
-        "ipkSize": 11614374
+        "ipkSize": 11957010
       },
       "pool": "main",
       "shortDescription": "Low-resource sing-box edition with one native TUN process.",

@@ -1,3 +1,4 @@
 /release-assets/
+/build/
 /.tmp-*/
 __pycache__/

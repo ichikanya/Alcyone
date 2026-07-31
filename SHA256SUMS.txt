@@ -17,3 +17,5 @@ e0642b62fae7713ec17b482fb77d6e20a376909df611efa1b20e26e926a5d211  com.alcyone.vp
 a948ac37d3c4cb12bbf8a0166c589108bc1974d5bdb4cc9ff0ae4d5b0004d484  Alcyone-sing-box_3.2.0_all.ipk
 da6394faa9d57f4fc768b985609af1eb98452488eef6a66c832b81c4df79fa4e  Alcyone-XRay_3.2.1_all.ipk
 8332292ee7aa2578029cb2ddac73cd88c3c56f531c66a74fa3676ff2edf91938  Alcyone-sing-box_3.2.1_all.ipk
+c78fe1c9dcb96123d78dfb3ab079ec1eb454ab7c7f86f08ef9c14b106baa8906  Alcyone-XRay_4.0.3.ipk
+2e286a5310fdcc2fc859a6b0ebadf2017e532476b6a877e95e31adf1ed8bf01b  Alcyone-sing-box_4.0.3.ipk

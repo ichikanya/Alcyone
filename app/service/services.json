@@ -1,0 +1,34 @@
+{
+  "id": "com.alcyone.vpn.service",
+  "description": "Alcyone VPN service: tunnel lifecycle, routing, profile storage and LAN import",
+  "services": [
+    {
+      "name": "com.alcyone.vpn.service",
+      "description": "Alcyone VPN control service",
+      "commands": [
+        { "name": "getState", "description": "Current edition, tunnel and pairing state" },
+        { "name": "getProfiles", "description": "Sanitized profile and subscription metadata" },
+        { "name": "getProfilesMeta", "description": "Store revision for cheap change detection" },
+        { "name": "selectProfile", "description": "Select the active server profile" },
+        { "name": "deleteProfile", "description": "Delete a stored profile" },
+        { "name": "importLink", "description": "Import a single proxy link" },
+        { "name": "addSubscription", "description": "Download and import a subscription" },
+        { "name": "updateSubscriptions", "description": "Refresh one or all subscriptions" },
+        { "name": "deleteSubscription", "description": "Delete a subscription and its profiles" },
+        { "name": "connect", "description": "Bring the tunnel up" },
+        { "name": "disconnect", "description": "Tear the tunnel down and restore routes" },
+        { "name": "restart", "description": "Reconnect the current profile" },
+        { "name": "autostart", "description": "Boot hook entry point" },
+        { "name": "probeProfiles", "description": "Measure reachability of stored servers" },
+        { "name": "checkExternalIp", "description": "Report the current external address" },
+        { "name": "getLogs", "description": "Bounded diagnostic log tail" },
+        { "name": "clearLogs", "description": "Clear the diagnostic log" },
+        { "name": "setAutostart", "description": "Enable or disable VPN autostart" },
+        { "name": "setLanguage", "description": "Persist the interface language" },
+        { "name": "startPairing", "description": "Open a temporary LAN import window" },
+        { "name": "stopPairing", "description": "Close the LAN import window" },
+        { "name": "restartService", "description": "Restart this service so a rewritten LS2 configuration takes effect" }
+      ]
+    }
+  ]
+}

@@ -1,10 +1,16 @@
-"""Verify independent, reproducible XRay and sing-box IPK builds."""
+"""Verify independent, reproducible XRay and sing-box IPK builds.
+
+Also asserts the packaging contract the maintainer review called out: the
+control archive carries no Debian maintainer scripts, the architecture matches
+the bundled ELF machine type, and each package registers its own Luna service.
+"""
 
 import gzip
 import hashlib
 import io
 import json
 import os
+import struct
 import subprocess
 import sys
 import tarfile
@@ -13,7 +19,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILDER = os.path.join(ROOT, "build_ipk.py")
-VERSION = "3.2.1"
+VERSION = "4.0.3"
 
 
 def sha256(data):
@@ -50,11 +56,15 @@ def read_tar_members(compressed):
 
 
 def build(output_dir, edition):
-    subprocess.run(
-        [sys.executable, BUILDER, "--edition", edition, "--output-dir", output_dir],
-        cwd=ROOT,
-        check=True,
-    )
+    command = [sys.executable, BUILDER, "--edition", edition, "--output-dir", output_dir]
+    subprocess.run(command, cwd=ROOT, check=True)
+
+
+def elf_machine(data):
+    if len(data) < 20 or data[:4] != b"ELF":
+        return None
+    little = data[5] == 1
+    return struct.unpack("<H" if little else ">H", data[18:20])[0]
 
 
 def verify(path, expected):
@@ -64,38 +74,105 @@ def verify(path, expected):
     control, control_modes = read_tar_members(ar_members["control.tar.gz"])
     data, data_modes = read_tar_members(ar_members["data.tar.gz"])
 
+    # webOS does not run Debian maintainer scripts; shipping them would imply
+    # initialization that never happens.
+    for hook in ("preinst", "postinst", "prerm", "postrm"):
+        assert hook not in control, "control.tar.gz must not contain " + hook
+    assert set(control) == {"control"}, "control archive must hold only 'control'"
+
     control_text = control["control"].decode("utf-8")
     assert "Package: %s\n" % expected["app_id"] in control_text
     assert "Version: %s\n" % VERSION in control_text
-    assert b"@" not in control["postinst"], "packaging tokens must be fully rendered"
+    assert "@" not in control_text.split("Maintainer:")[0], "packaging tokens must be fully rendered"
     assert control_modes["control"] == 0o644
 
+    # Architecture must describe the payload, not be asserted as 'all'.
+    assert "Architecture: %s\n" % expected["arch"] in control_text, control_text
+    assert "Architecture: all" not in control_text
+
     prefix = "usr/palm/applications/" + expected["app_id"] + "/"
+    service_prefix = "usr/palm/services/" + expected["service_id"] + "/"
+
     appinfo = json.loads(data[prefix + "appinfo.json"].decode("utf-8"))
     assert appinfo["id"] == expected["app_id"]
     assert appinfo["version"] == VERSION
     assert appinfo["title"] == expected["title"]
+
     packageinfo_path = "usr/palm/packages/" + expected["app_id"] + "/packageinfo.json"
     packageinfo = json.loads(data[packageinfo_path].decode("utf-8"))
-    assert packageinfo == {"app": expected["app_id"], "services": []}
+    assert packageinfo["app"] == expected["app_id"]
+    assert packageinfo["services"] == [expected["service_id"]], packageinfo
     assert data_modes[packageinfo_path] == 0o644
-    edition = data[prefix + "edition.js"].decode("utf-8")
-    assert expected["core"] in edition
-    assert expected["data_dir"] in edition
-    assert data_modes[prefix + "scripts/alcyonectl.sh"] == 0o755
+
+    # The Luna service must be present and correctly identified.
+    assert service_prefix + "service.js" in data, "service entry point missing"
+    service_pkg = json.loads(data[service_prefix + "package.json"].decode("utf-8"))
+    assert service_pkg["name"] == expected["service_id"]
+    assert service_pkg["main"] == "service.js"
+    services_json = json.loads(data[service_prefix + "services.json"].decode("utf-8"))
+    assert services_json["id"] == expected["service_id"]
+    assert services_json["services"][0]["name"] == expected["service_id"]
+    assert services_json["services"][0]["commands"], "service must declare its commands"
+
+    roles_json = json.loads(data[service_prefix + "roles.json"].decode("utf-8"))
+    assert roles_json["allowedNames"] == [expected["service_id"]]
+    assert roles_json["permissions"][0]["inbound"] == [expected["app_id"]]
+    assert "*" not in roles_json["permissions"][0]["inbound"]
+    assert service_prefix + "role.json" in data
+    ca_path = service_prefix + "certs/cacert.pem"
+    assert ca_path in data, "current TLS trust bundle missing"
+    assert sha256(data[ca_path]) == "3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91"
+    assert data[ca_path].count(b"-----BEGIN CERTIFICATE-----") == 119
+
+    # Luna forbids '-' in service names, and the id must extend the app id.
+    assert "-" not in expected["service_id"]
+    assert expected["service_id"].startswith(expected["app_id"] + ".")
+
+    edition_json = json.loads(data[service_prefix + "edition.json"].decode("utf-8"))
+    assert edition_json["dataDir"] == expected["data_dir"]
+    assert edition_json["serviceId"] == expected["service_id"]
+
+    edition_js = data[prefix + "edition.js"].decode("utf-8")
+    assert expected["core"] in edition_js
+    assert expected["service_id"] in edition_js
+
+    # Both interfaces ship the exact same effective country mapping. The TV
+    # loads it before app.js; the service uses its byte-identical copy when
+    # rendering Unicode emoji flags for the web importer.
+    app_countries = data[prefix + "countries.js"]
+    service_countries = data[service_prefix + "countries.js"]
+    assert app_countries == service_countries
+    index_html = data[prefix + "index.html"].decode("utf-8")
+    assert index_html.index('src="countries.js"') < index_html.index('src="app.js"')
+
+    # The retired shell control script and web monolith must be gone.
+    assert not any("alcyonectl" in name for name in data), "shell control script must not ship"
+    assert not any("alcyone-web" in name for name in data), "web monolith must not ship"
 
     if expected["core"] == "xray":
         assert prefix + "bin/xray" in data
         assert prefix + "bin/tun2socks" in data
         assert prefix + "bin/sing-box" not in data
-        assert sha256(data[prefix + "bin/xray"]) == "b7ea2a82185f0f7a59510b01b24a93cc3c45529dabbf3c97970ad66c49c6b882"
+        assert sha256(data[prefix + "bin/xray"]) == "2b861a00e052ca2faad8d50d62934e3706e2e059f1c2efb1f24a9e44659885ff"
+        assert sha256(data[prefix + "bin/tun2socks"]) == "b2bbe63f8144ce67a9f8839541428999302b68cd54fbf14f403c73be75cd719a"
         assert data_modes[prefix + "bin/xray"] == 0o755
+        assert sha256(data[prefix + "bin/geosite.dat"]) == "adf92de0cfc70e458b399f04c5f912bf42d115ed7e37281b30e2f1c68605e4e9"
+        assert sha256(data[prefix + "bin/geoip.dat"]) == "744c97b74c52bae2ac8664fef6ac481d7765cb8432a0df54f0368a88b9b4a354"
+        assert data_modes[prefix + "bin/geosite.dat"] == 0o644
+        assert data_modes[prefix + "bin/geoip.dat"] == 0o644
+        natives = ["bin/xray", "bin/tun2socks"]
     else:
         assert prefix + "bin/sing-box" in data
         assert prefix + "bin/xray" not in data
         assert prefix + "bin/tun2socks" not in data
-        assert sha256(data[prefix + "bin/sing-box"]) == "900c9e01b628a59c39af5705b389bff0de3a4c2fc66a1f0f5951fe3f11f5f664"
+        assert sha256(data[prefix + "bin/sing-box"]) == "e1db083cfc4fd9c6c93ce75eaeab9f6b59b490fe8258cd28e970ede28412f8e6"
         assert data_modes[prefix + "bin/sing-box"] == 0o755
+        natives = ["bin/sing-box"]
+
+    # Every bundled native binary must really be 32-bit ARM.
+    for relative in natives:
+        machine = elf_machine(data[prefix + relative])
+        assert machine == 40, "%s is not ARM (e_machine=%s)" % (relative, machine)
 
     return sha256(payload)
 
@@ -104,17 +181,21 @@ def main():
     expected = {
         "xray": {
             "app_id": "com.alcyone.vpn",
+            "service_id": "com.alcyone.vpn.service",
             "title": "Alcyone XRay",
             "core": "xray",
+            "arch": "arm",
             "data_dir": "/var/lib/alcyone",
-            "artifact": "Alcyone-XRay_%s_all.ipk" % VERSION,
+            "artifact": "Alcyone-XRay_%s_arm.ipk" % VERSION,
         },
         "sing-box": {
             "app_id": "com.alcyone.vpn.singbox",
+            "service_id": "com.alcyone.vpn.singbox.service",
             "title": "Alcyone sing-box",
             "core": "sing-box",
+            "arch": "arm",
             "data_dir": "/var/lib/alcyone-singbox",
-            "artifact": "Alcyone-sing-box_%s_all.ipk" % VERSION,
+            "artifact": "Alcyone-sing-box_%s_arm.ipk" % VERSION,
         },
     }
     with tempfile.TemporaryDirectory(prefix="alcyone-build-test-") as output_dir:

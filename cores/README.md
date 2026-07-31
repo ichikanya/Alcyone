@@ -1,32 +1,34 @@
-# Bundled VPN cores
+# Native VPN cores
 
-The edition builder injects exactly one core set into each IPK:
+Native executables are not stored in Git. They are generated into the ignored
+`build/cores/` directory before packaging:
 
-- XRay Edition: the unchanged Linux ARMv7 Xray 26.3.27 binary and tun2socks used by Alcyone 3.1.7.
-- sing-box Edition: a Linux ARMv7 sing-box 1.13.14 binary built from upstream tag `v1.13.14` (commit `25a600db24f7680ad9806ce5427bd0ab8afe1114`) with Go 1.24.7.
+| Edition | Release inputs | Target |
+| --- | --- | --- |
+| XRay | Xray built from source; checksum-verified upstream tun2socks asset | Linux ARMv7 |
+| sing-box | trimmed sing-box built from source | Linux ARMv7 |
 
-The sing-box build intentionally enables only `with_quic`, `with_utls`, `badlinkname`, and `tfogo_checklinkname0`. It omits gVisor, WireGuard, ACME, APIs, Tailscale, Tor/Naive, and auxiliary services. The application uses the native system TUN stack, so the edition runs one VPN process.
+Every source tag resolves to an exact Git commit. Go modules remain in readonly
+mode and are verified through the upstream `go.sum`. The old cgo/lwIP
+tun2socks is consumed from its immutable upstream release because rebuilding it
+requires its historical cross-C toolchain; its SHA-256 is checked before use.
 
-Build command used for the sing-box ARMv7 binary:
+Machine-readable commits, build flags, expected output hashes, sizes and
+licenses are in [`provenance.json`](provenance.json). Upstream license texts are
+in [`licenses/`](licenses).
+
+## Build
+
+Install Git and Go 1.26.1, then run:
 
 ```sh
-CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 GOTOOLCHAIN=local \
-  go build -trimpath \
-  -tags "with_quic,with_utls,badlinkname,tfogo_checklinkname0" \
-  -ldflags "-X github.com/sagernet/sing-box/constant.Version=1.13.14 -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0 -s -w -buildid=" \
-  -o sing-box ./cmd/sing-box
+tools/build-cores.sh
 ```
 
-SHA-256:
+Individual components may be produced with `xray`, `tun2socks`, or `sing-box`
+as the first argument. The script never resolves `latest`, verifies the exact
+checked-out commit, disables automatic Go toolchain switching, and checks the
+tun2socks release checksum.
 
-```text
-b7ea2a82185f0f7a59510b01b24a93cc3c45529dabbf3c97970ad66c49c6b882  xray/xray
-b2bbe63f8144ce67a9f8839541428999302b68cd54fbf14f403c73be75cd719a  xray/tun2socks
-900c9e01b628a59c39af5705b389bff0de3a4c2fc66a1f0f5951fe3f11f5f664  sing-box/sing-box
-```
-
-Upstream source and licenses:
-
-- <https://github.com/XTLS/Xray-core/tree/v26.3.27>
-- <https://github.com/xjasonlyu/tun2socks/tree/v2.6.0>
-- <https://github.com/SagerNet/sing-box/tree/v1.13.14>
+`tests/binary-provenance.test.py` checks both the pinned manifest and every
+generated ELF when `build/cores/` exists.

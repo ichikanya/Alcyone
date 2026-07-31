@@ -1,4 +1,4 @@
-/* Alcyone 3.2.1 TV interface - Nebula palette */
+/* Alcyone 4.0.1 TV interface - Nebula palette */
 @font-face{font-family:'Montserrat';src:url('fonts/Montserrat-Regular.ttf') format('truetype');font-weight:400;font-style:normal}
 @font-face{font-family:'Montserrat';src:url('fonts/Montserrat-SemiBold.ttf') format('truetype');font-weight:600;font-style:normal}
 @font-face{font-family:'Montserrat';src:url('fonts/Montserrat-Bold.ttf') format('truetype');font-weight:700;font-style:normal}
@@ -23,11 +23,11 @@ button{-webkit-appearance:none;appearance:none;font-family:inherit;cursor:pointe
 .page::-webkit-scrollbar-thumb,pre::-webkit-scrollbar-thumb{background:#6f55c8;border-color:#0b0815}
 
 /* ---------- sidebar ---------- */
-aside{width:286px;min-width:286px;background:#0d0a17;border:1px solid #221a38;border-radius:18px;padding:28px 22px 24px;position:relative;display:flex;flex-direction:column;margin-right:40px;overflow:visible}
-.brand{display:flex;align-items:center;color:#b18cff;font-weight:700;font-size:25px;letter-spacing:.06em;margin:0 0 38px 4px;min-width:0}
-.brandLogo{width:46px;height:46px;flex:0 0 46px;border-radius:11px;display:block}
-.brandText{min-width:0;white-space:nowrap;margin-left:14px}
-.brand span{color:#6f6790;font-size:13px;font-weight:600;letter-spacing:0;margin-left:8px}
+aside{width:286px;min-width:286px;background:#0d0a17;border:1px solid #221a38;border-radius:18px;padding:28px 20px 24px;position:relative;display:flex;flex-direction:column;margin-right:40px;overflow:visible}
+.brand{display:flex;align-items:center;color:#b18cff;font-weight:700;font-size:24px;letter-spacing:.03em;margin:0 0 38px 2px;min-width:0}
+.brandLogo{width:44px;height:44px;flex:0 0 44px;border-radius:11px;display:block}
+.brandText{min-width:0;white-space:nowrap;margin-left:12px}
+.brand span{color:#6f6790;font-size:12px;font-weight:600;letter-spacing:0;margin-left:6px}
 .nav{display:flex;align-items:center;width:100%;min-height:62px;margin:7px 0;padding:16px 18px;border:1px solid transparent;border-radius:14px;background:transparent;color:#9d95b5;text-align:left;font-weight:600;font-size:20px}
 .nav .ic{width:26px;height:26px;margin-right:16px;flex:0 0 26px}
 .nav .ic.on{display:none}
@@ -35,7 +35,7 @@ aside{width:286px;min-width:286px;background:#0d0a17;border:1px solid #221a38;bo
 .nav.active .ic.off{display:none}
 .nav.active .ic.on{display:inline-block}
 .nav:focus{outline:none;box-shadow:inset 0 0 0 3px #b18cff,0 0 0 1px rgba(177,140,255,.45)}
-.ver{margin-top:auto;padding:16px 0 2px 6px;color:#5e5680;font-size:13px}
+.ver{margin-top:auto;padding:16px 0 2px 4px;color:#5e5680;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ---------- main / pages ---------- */
 main{flex:1;padding:0 4px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
@@ -81,6 +81,8 @@ header span{font-size:15px;color:#837b9e;margin-left:16px}
 .homeWebIcon{width:38px;height:38px;min-width:38px;margin-right:12px;padding:7px;background:#0c0918;border:1px solid #2b2148;border-radius:10px}
 .webbox b{display:block;font-weight:600;color:#ddd4ee;font-size:17px}
 .homeWebBody>span{display:inline-block;max-width:100%;margin-top:8px;padding:6px 11px;background:#0e0a1b;border:1px solid #322656;border-radius:9px;color:#b18cff;font-weight:600;font-size:15px;line-height:1.25;word-break:break-all}
+.webPairInfo{margin-top:8px;font-size:15px;color:#c4b9e3;font-weight:600}
+.webPairInfo b{display:inline-block;color:#b18cff;font-family:ui-monospace,Consolas,monospace;letter-spacing:.12em;font-size:17px;padding:0 4px}
 .webbox small{display:block;max-width:540px;margin:7px auto 0;color:#837b9e;font-size:13px;line-height:1.4}
 
 /* ---------- flags ---------- */
@@ -188,6 +190,16 @@ pre:focus{outline:none;border-color:#b18cff;box-shadow:inset 0 0 0 3px #b18cff,0
 .donateInfo b{display:block;font-size:25px;color:#f2eefc;font-weight:700}
 .donateInfo p{color:#9a92b3;font-size:17px;line-height:1.55;margin:16px 0 0;max-width:600px}
 .tgBadge{display:inline-block;margin-top:20px;padding:9px 20px;border-radius:999px;background:#1e1537;border:1px solid #3c2c66;color:#b18cff;font-weight:600;font-size:16px}
+
+
+/* LAN pairing screen: the code is large enough to read from a sofa. */
+.pairBox{background:#141021;border:1px solid #2a2144;border-radius:18px;padding:26px 30px}
+.pairClosed{color:#9a92b3;font-size:19px}
+.pairLabel{display:block;color:#9a92b3;font-size:15px;margin-bottom:6px}
+.pairCode b{display:block;font-size:52px;letter-spacing:.24em;color:#b18cff;font-weight:700;font-family:ui-monospace,Consolas,monospace}
+.pairAddr{margin-top:22px;font-size:22px;color:#e9e4f5;word-break:break-all}
+.pairExpiry{margin-top:18px;color:#9a92b3;font-size:17px}
+.pairWarn{margin-top:18px;color:#9a92b3;font-size:15px;line-height:1.45;max-width:760px}
 
 @media (max-width:1500px){
   #app{padding:28px 36px}

@@ -1,0 +1,8 @@
+{
+  "name": "com.alcyone.vpn.service",
+  "version": "4.0.3",
+  "description": "Alcyone VPN Luna service",
+  "main": "service.js",
+  "private": true,
+  "dependencies": {}
+}

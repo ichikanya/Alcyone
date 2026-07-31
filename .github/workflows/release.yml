@@ -23,22 +23,47 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.1"
+          cache: true
+      - name: Build and verify pinned ARM cores
+        run: |
+          tools/build-cores.sh
+          python tests/binary-provenance.test.py
       - name: Syntax checks
         run: |
           node --check app/app.js
-          node --check app/web/alcyone-web.js
-          sh -n app/scripts/alcyonectl.sh
-          sh -n CONTROL/preinst
-          sh -n CONTROL/postinst
-          sh -n CONTROL/prerm
+          find app/service -name '*.js' -print0 | xargs -0 -n1 node --check
+          sh -n tools/build-cores.sh
           python -m py_compile build_ipk.py
+      - name: Exact webOS 4 Node.js runtime checks
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output /tmp/node-v0.12.2-linux-x64.tar.gz \
+            https://nodejs.org/dist/v0.12.2/node-v0.12.2-linux-x64.tar.gz
+          echo "4e1578efc2a2cc67651413a05ccc4c5d43f6b4329c599901c556f24d93cd0508  /tmp/node-v0.12.2-linux-x64.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/node-v0.12.2-linux-x64.tar.gz -C /tmp
+          old_node=/tmp/node-v0.12.2-linux-x64/bin/node
+          "$old_node" tests/node012-syntax.test.js
+          "$old_node" tests/node012-runtime.test.js
       - name: JavaScript tests
         run: |
           for test_file in tests/*.test.js; do
+            echo "--- $test_file"
             node "$test_file"
           done
-      - name: Packaging tests
-        run: python tests/build-editions.test.py
+      - name: Python tests
+        run: |
+          for test_file in tests/*.test.py; do
+            echo "--- $test_file"
+            python "$test_file"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: alcyone-cores
+          path: build/cores
+          if-no-files-found: error
 
   build:
     needs: test
@@ -53,6 +78,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - uses: actions/download-artifact@v7
+        with:
+          name: alcyone-cores
+          path: build/cores
       - name: Build ${{ matrix.edition }} edition
         run: python build_ipk.py --edition "${{ matrix.edition }}" --output-dir dist
       - uses: actions/upload-artifact@v7
@@ -69,6 +98,14 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: alcyone-xray
+          path: dist
+      - uses: actions/download-artifact@v7
+        with:
+          name: alcyone-sing-box
+          path: dist
       - name: Publish canonical release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,8 +115,8 @@ jobs:
           # Matrix jobs verify both independent builds; release the exact bytes
           # referenced by the repository feed, manifests, and SHA256SUMS.
           assets=(
-            "packages/Alcyone-XRay_${version}_all.ipk"
-            "packages/Alcyone-sing-box_${version}_all.ipk"
+            "dist/Alcyone-XRay_${version}_arm.ipk"
+            "dist/Alcyone-sing-box_${version}_arm.ipk"
           )
           for asset in "${assets[@]}"; do
             test -f "$asset"

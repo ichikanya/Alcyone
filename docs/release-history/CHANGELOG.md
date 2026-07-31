@@ -1,5 +1,23 @@
 # Changelog
 
+## 4.0.3 (2026-07-31)
+
+- Added checksum-verified runtime staging for every native core and verified
+  XRay routing assets.
+- Added endpoint DNS bootstrap, crash-safe route rollback, direct-range bypass
+  routes, data-plane verification, and bounded recovery of owned core orphans.
+- Corrected Hysteria2 Salamander configuration for XRay and retained only the
+  documented supported obfuscation form.
+- Removed historical `_all.ipk` archives that contained ARM binaries and
+  hardened the release workflow around reproducible ARM package inputs.
+
+## 4.0.0 (unreleased)
+
+- Moved privileged VPN lifecycle and networking into per-edition Luna services.
+- Added independent ARM XRay and sing-box builds from pinned native inputs.
+- Hardened Luna authorization, LAN pairing, downloads, migration and rollback.
+- Added exact Node.js 0.12.2 compatibility and deterministic IPK checks.
+
 ## 3.2.1
 
 - Added the standard webOS `packageinfo.json` metadata to both edition IPKs so Homebrew compatibility verification can inspect them.

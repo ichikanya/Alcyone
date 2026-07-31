@@ -1,7 +1,10 @@
+/* Protocol and subscription parsing coverage.
+   Repointed from the retired web monolith to the pure parser module; the
+   assertions are unchanged so the supported protocol set stays verified. */
 'use strict';
 
 var assert = require('assert');
-var parser = require('../app/web/alcyone-web.js');
+var parser = require('../app/service/lib/proto/parsers.js');
 
 function vlessOutbound(tag, host, uuid, serviceName) {
   return {

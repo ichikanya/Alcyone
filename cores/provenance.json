@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 2,
+  "description": "Pinned provenance for native files generated into build/cores. Native executables are release inputs, not repository source files.",
+  "components": [
+    {
+      "name": "xray",
+      "path": "build/cores/xray/xray",
+      "upstreamRepository": "https://github.com/XTLS/Xray-core",
+      "upstreamTag": "v26.3.27",
+      "upstreamCommit": "d2758a023cd7f4174a5a5fa4ff66e487d4342ba0",
+      "acquisition": "source-build",
+      "toolchain": "go1.26.1",
+      "buildFlags": [
+        "CGO_ENABLED=0",
+        "GOOS=linux",
+        "GOARCH=arm",
+        "GOARM=7",
+        "GOTOOLCHAIN=local",
+        "-mod=readonly",
+        "-trimpath",
+        "-ldflags=-s -w -buildid="
+      ],
+      "featuresEnabled": [],
+      "featuresDisabled": [],
+      "outputArchitecture": "linux/arm/v7",
+      "elfMachine": 40,
+      "sha256": "2b861a00e052ca2faad8d50d62934e3706e2e059f1c2efb1f24a9e44659885ff",
+      "sizeBytes": 30277758,
+      "license": "MPL-2.0",
+      "licenseFile": "cores/licenses/xray-LICENSE"
+    },
+    {
+      "name": "tun2socks",
+      "path": "build/cores/tun2socks/tun2socks",
+      "upstreamRepository": "https://github.com/eycorsican/go-tun2socks",
+      "upstreamTag": "v1.16.11",
+      "upstreamCommit": "0ced89adec90debc056b38fe9a0bf51f4ae5cc38",
+      "acquisition": "verified-upstream-release",
+      "releaseAsset": "https://github.com/eycorsican/go-tun2socks/releases/download/v1.16.11/tun2socks-linux-arm-7",
+      "releaseAssetSha256": "b2bbe63f8144ce67a9f8839541428999302b68cd54fbf14f403c73be75cd719a",
+      "toolchain": "upstream release; embedded Go go1.13.4",
+      "buildFlags": [
+        "upstream linux/arm/7 asset",
+        "socks build tag",
+        "cgo/lwIP"
+      ],
+      "featuresEnabled": ["socks", "udp"],
+      "featuresDisabled": [],
+      "outputArchitecture": "linux/arm/v7",
+      "elfMachine": 40,
+      "sha256": "b2bbe63f8144ce67a9f8839541428999302b68cd54fbf14f403c73be75cd719a",
+      "sizeBytes": 2844052,
+      "license": "MIT",
+      "licenseFile": "cores/licenses/tun2socks-LICENSE"
+    },
+    {
+      "name": "sing-box",
+      "path": "build/cores/sing-box/sing-box",
+      "upstreamRepository": "https://github.com/SagerNet/sing-box",
+      "upstreamTag": "v1.13.14",
+      "upstreamCommit": "25a600db24f7680ad9806ce5427bd0ab8afe1114",
+      "acquisition": "source-build",
+      "toolchain": "go1.26.1",
+      "buildFlags": [
+        "CGO_ENABLED=0",
+        "GOOS=linux",
+        "GOARCH=arm",
+        "GOARM=7",
+        "GOTOOLCHAIN=local",
+        "-mod=readonly",
+        "-trimpath",
+        "-tags=with_quic,with_utls,badlinkname,tfogo_checklinkname0",
+        "-ldflags=-X github.com/sagernet/sing-box/constant.Version=1.13.14 -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0 -s -w -buildid="
+      ],
+      "featuresEnabled": ["with_quic", "with_utls", "badlinkname", "tfogo_checklinkname0"],
+      "featuresDisabled": ["gvisor", "wireguard", "acme", "api", "tailscale", "tor", "naive", "clash_api", "v2ray_api"],
+      "outputArchitecture": "linux/arm/v7",
+      "elfMachine": 40,
+      "sha256": "e1db083cfc4fd9c6c93ce75eaeab9f6b59b490fe8258cd28e970ede28412f8e6",
+      "sizeBytes": 26673278,
+      "license": "GPL-3.0-or-later",
+      "licenseFile": "cores/licenses/sing-box-LICENSE"
+    }
+  ],
+  "assets": [
+    {
+      "name": "geosite.dat",
+      "path": "build/cores/xray/geosite.dat",
+      "upstreamRepository": "https://github.com/XTLS/Xray-core",
+      "upstreamTag": "v26.3.27",
+      "upstreamCommit": "d2758a023cd7f4174a5a5fa4ff66e487d4342ba0",
+      "acquisition": "verified-official-release-archive-member",
+      "releaseAsset": "https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-arm32-v7a.zip",
+      "releaseAssetSha256": "c7265ae13c63ca0241a037df4ef960ad37938c8a67d984cc08834b2cfdf5654b",
+      "sha256": "adf92de0cfc70e458b399f04c5f912bf42d115ed7e37281b30e2f1c68605e4e9",
+      "sizeBytes": 10491954,
+      "purpose": "Xray geosite: routing rules"
+    },
+    {
+      "name": "geoip.dat",
+      "path": "build/cores/xray/geoip.dat",
+      "upstreamRepository": "https://github.com/XTLS/Xray-core",
+      "upstreamTag": "v26.3.27",
+      "upstreamCommit": "d2758a023cd7f4174a5a5fa4ff66e487d4342ba0",
+      "acquisition": "verified-official-release-archive-member",
+      "releaseAsset": "https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-arm32-v7a.zip",
+      "releaseAssetSha256": "c7265ae13c63ca0241a037df4ef960ad37938c8a67d984cc08834b2cfdf5654b",
+      "sha256": "744c97b74c52bae2ac8664fef6ac481d7765cb8432a0df54f0368a88b9b4a354",
+      "sizeBytes": 19768301,
+      "purpose": "Xray geoip: routing rules"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Alcyone
 
-Alcyone is a VPN client for rooted LG webOS TVs. Version 3.2.1 is available in two independently installable editions that share the same TV UI, subscription importer, routing controls, and web interface.
+Alcyone is a VPN client for rooted LG webOS TVs. Version 4.0.3 is available in two independently installable editions that share the same TV UI, subscription importer, routing controls, and web interface.
 
 | Edition | Best for | Core and identity |
 | --- | --- | --- |
@@ -8,6 +8,11 @@ Alcyone is a VPN client for rooted LG webOS TVs. Version 3.2.1 is available in t
 | **Alcyone sing-box** | Low-powered TVs, low process and descriptor use, stability, and fast startup | Trimmed sing-box 1.13.14 with one native system-TUN process; separate `com.alcyone.vpn.singbox` identity and `/var/lib/alcyone-singbox` data |
 
 Both editions support VLESS, VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2 links, unified subscription import, server selection and ping, subscription updates, VPN autostart, external-IP checks, tunnel logs, Russian/English UI, and LG remote navigation. Root access is required.
+
+Privileged work runs in a per-edition Luna service; the TV interface only calls
+scoped Luna methods and never builds a shell command or handles stored secrets.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+[docs/SECURITY.md](docs/SECURITY.md).
 
 ## Installation
 
@@ -19,16 +24,26 @@ https://ichikanya.github.io/Alcyone/r.json
 
 The feed lists both editions. For manual installation:
 
-- [Alcyone XRay 3.2.1](https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/Alcyone-XRay_3.2.1_all.ipk)
-- [Alcyone sing-box 3.2.1](https://raw.githubusercontent.com/ichikanya/Alcyone/main/packages/Alcyone-sing-box_3.2.1_all.ipk)
+- [Alcyone XRay 4.0.3](https://github.com/ichikanya/Alcyone/releases/download/v4.0.3/Alcyone-XRay_4.0.3.ipk)
+- [Alcyone sing-box 4.0.3](https://github.com/ichikanya/Alcyone/releases/download/v4.0.3/Alcyone-sing-box_4.0.3.ipk)
 
 Install an IPK with webOS Dev Manager, `ares-install`, or the Homebrew Channel installation service.
 
-## Build
-
-Python 3 is the only build-time requirement. Each edition can be built independently:
+The bundled Luna service needs root for TUN and routing only. Grant it once per
+edition with Homebrew Channel's elevation:
 
 ```sh
+/media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/elevate-service com.alcyone.vpn.service
+/media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/elevate-service com.alcyone.vpn.singbox.service
+```
+
+## Build
+
+Git, Go 1.26.1 and Python 3 are required. Build the pinned ARM cores first,
+then package either edition independently:
+
+```sh
+tools/build-cores.sh
 python build_ipk.py --edition xray
 python build_ipk.py --edition sing-box
 ```
@@ -42,21 +57,30 @@ python build_ipk.py --edition all
 Artifacts are written to:
 
 ```text
-release-assets/Alcyone-XRay_3.2.1_all.ipk
-release-assets/Alcyone-sing-box_3.2.1_all.ipk
+packages/Alcyone-XRay_4.0.3_arm.ipk
+packages/Alcyone-sing-box_4.0.3_arm.ipk
 ```
 
-The builder is deterministic and injects edition-specific metadata and binaries into the shared `app/` source. Core provenance and hashes are documented in [cores/README.md](cores/README.md).
+The builder is deterministic and injects edition-specific metadata, service
+identifiers and binaries into the shared `app/` source. The package
+architecture is derived from the ELF machine type of the bundled cores rather
+than hard-coded. Core provenance, build flags and hashes are recorded in
+[cores/provenance.json](cores/provenance.json); rebuild them from pinned
+sources with [tools/build-cores.sh](tools/build-cores.sh).
 
 ## Validation
 
 ```sh
 node --check app/app.js
-node --check app/web/alcyone-web.js
-sh -n app/scripts/alcyonectl.sh
+find app/service -name '*.js' -print0 | xargs -0 -n1 node --check
 for test_file in tests/*.test.js; do node "$test_file"; done
-python tests/build-editions.test.py
+for test_file in tests/*.test.py; do python "$test_file"; done
 ```
+
+The suite covers the Luna method contract, SSRF and TLS policy, LAN pairing and
+CSRF, route rollback on every failure path, cross-edition tunnel locking,
+migration safety, packaging, and binary provenance. `tests/repo-guards.test.py`
+fails the build if an insecure pattern reappears.
 
 GitHub Actions runs the same checks, builds each edition in a separate matrix job, and attaches both artifacts to tagged releases.
 
@@ -64,9 +88,13 @@ GitHub Actions runs the same checks, builds each edition in a separate matrix jo
 
 - The XRay edition is the in-place upgrade path for existing Alcyone installations and preserves `/var/lib/alcyone`.
 - The sing-box edition uses its own app ID, storage, port 8081, and autostart entry. On first install it can seed its profile store from XRay without sharing later changes.
-- Both editions may be installed together, but only one VPN tunnel should run at a time because both manage the TV-wide `tun0` route.
+- Both editions may be installed together. A cross-edition lock enforces that only one owns the TV-wide `tun0` route at a time; the second edition refuses to connect while the first holds it.
 - XHTTP and full XRay routing/balancer semantics remain XRay-only; sing-box rejects XHTTP before startup.
 - After turning on the TV, wait for its network connection before starting VPN. Disabling Quick Start is recommended for predictable autostart.
+
+**This build has not been tested on a real television.** The manual validation
+procedure is in [docs/TV-TEST-CHECKLIST.md](docs/TV-TEST-CHECKLIST.md) and is
+still unperformed.
 
 The complete changelog and every historical release note are in [docs/release-history](docs/release-history/README.md).
 
@@ -76,4 +104,4 @@ Feedback and bug reports: [@AlcyoneVPN](https://t.me/AlcyoneVPN)
 
 ## По-русски
 
-Alcyone 3.2.1 выпускается в двух вариантах: **XRay** для больших подписок, XHTTP и полных конфигураций XRay; **sing-box** для маломощных телевизоров, быстрого запуска и минимального количества процессов. Оба варианта имеют прежний интерфейс и устанавливаются независимо. Одновременно запускайте только один VPN-туннель.
+Alcyone 4.0.3 выпускается в двух вариантах: **XRay** для больших подписок, XHTTP и полных конфигураций XRay; **sing-box** для маломощных телевизоров, быстрого запуска и минимального количества процессов. Оба варианта имеют прежний интерфейс и устанавливаются независимо. Одновременно запускайте только один VPN-туннель.
