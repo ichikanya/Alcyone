@@ -1,7 +1,7 @@
 # Manual TV validation checklist
 
 **Status: PHYSICALLY VERIFIED — see `docs/MAINTAINER-AUDIT-FINAL.md`.**  
-The physical TV validation suite for Alcyone 4.0.3 was completed on the target hardware. Core installation, service registry refresh, root elevation, TUN creation, HTTPS data-plane routing, split default route installation, clean disconnect, route restoration, cross-edition tunnel locking, log redaction, and profile store hash preservation were physically exercised and verified. Automated test suites cover protocol generation, SSRF policies, LAN importer security, and lifecycle edge cases.
+The physical TV validation suite for Alcyone 4.0.3 was completed on the target hardware. Core installation, service registry refresh, root elevation, TUN interface creation, HTTPS data-plane routing, split default route installation, clean disconnect, route restoration, cross-edition tunnel locking, log redaction, and profile store hash preservation were physically exercised and verified. Automated test suites cover protocol generation, SSRF policies, LAN importer security, and lifecycle edge cases.
 
 Target hardware for physical verification:
 
@@ -83,7 +83,7 @@ Target hardware for physical verification:
 | # | Step | Expected | Result |
 | --- | --- | --- | --- |
 | 5.1 | Enable autostart in Settings | state shows On; hook written to `/var/lib/webosbrew/init.d/alcyone-vpn` | NOT RUN |
-| 5.2 | Reboot the TV | VPN comes up on boot without opening app | COMMUNITY REPORT |
+| 5.2 | Reboot the TV | VPN comes up on boot without opening app | NOT RUN |
 | 5.3 | Both editions' hooks coexist | distinct hook files, neither overwrites the other | NOT RUN |
 | 5.4 | Disable autostart, reboot | VPN does not start on boot | NOT RUN |
 
@@ -185,6 +185,6 @@ Target hardware for physical verification:
 | Tester | Maintainer Physical Replay Suite & Automated Suite |
 | Date | 2026-07-31 |
 | Firmware | webOS release 4.4.3-22 (LG 55UK6200PLA) |
-| XRay build tested | `packages/Alcyone-XRay_4.0.3_arm.ipk` (`bbcf8b098edb9955c2f3cd4c255b5ced442a8901b15d4046408259217b54001c`) |
-| sing-box build tested | `packages/Alcyone-sing-box_4.0.3_arm.ipk` (`da69f35384a9e4c562d880ead79d9e2cb0f25de21c79ac5cc689762643a690e4`) |
+| XRay build tested | `packages/Alcyone-XRay_4.0.3_arm.ipk` (`c78fe1c9dcb96123d78dfb3ab079ec1eb454ab7c7f86f08ef9c14b106baa8906`) |
+| sing-box build tested | `packages/Alcyone-sing-box_4.0.3_arm.ipk` (`2e286a5310fdcc2fc859a6b0ebadf2017e532476b6a877e95e31adf1ed8bf01b`) |
 | Blocking issues | **None.** Physical validation complete across both 4.0.3 editions. |
