@@ -13,6 +13,7 @@ var assert = require('assert');
 var fs = require('fs');
 var os = require('os');
 var path = require('path');
+var ROOT = path.join(__dirname, '..');
 
 var healthLib = require('../app/service/lib/health');
 var supervisorLib = require('../app/service/lib/supervisor');
@@ -49,6 +50,13 @@ function armElf(extra) {
   return buffer;
 }
 
+function copyPinnedCore(name, destination) {
+  var relative = name === 'sing-box' ? ['sing-box', 'sing-box'] : ['xray', name];
+  fs.writeFileSync(destination,
+    fs.readFileSync(path.join.apply(path, [ROOT, 'build', 'cores'].concat(relative))));
+  fs.chmodSync(destination, 493); /* 0755; old-JavaScript-compatible literal */
+}
+
 check('ARMv7 cores remain valid on an ARM64 Linux compatibility userspace', function () {
   assert.strictEqual(healthLib.machineMatchesRuntime(40, 'linux', 'arm64'), true);
   assert.strictEqual(healthLib.machineMatchesRuntime(62, 'linux', 'arm64'), false);
@@ -59,8 +67,8 @@ fs.mkdirSync(path.join(dataDir, 'bin'), { recursive: true });
 fs.mkdirSync(serviceDir, { recursive: true });
 fs.writeFileSync(path.join(appDir, 'appinfo.json'), '{"id":"com.alcyone.vpn"}');
 fs.writeFileSync(path.join(serviceDir, 'service.js'), '/* stub */');
-fs.writeFileSync(path.join(appDir, 'bin', 'xray'), armElf(64));
-fs.writeFileSync(path.join(appDir, 'bin', 'tun2socks'), armElf(64));
+copyPinnedCore('xray', path.join(appDir, 'bin', 'xray'));
+copyPinnedCore('tun2socks', path.join(appDir, 'bin', 'tun2socks'));
 
 var paths = { appDir: appDir, dataDir: dataDir };
 
@@ -73,7 +81,7 @@ var paths = { appDir: appDir, dataDir: dataDir };
 var healthyDir = path.join(tmp, 'healthy');
 fs.mkdirSync(path.join(healthyDir, 'bin'), { recursive: true });
 fs.writeFileSync(path.join(healthyDir, 'appinfo.json'), '{}');
-fs.writeFileSync(path.join(healthyDir, 'bin', 'sing-box'), armElf(64));
+copyPinnedCore('sing-box', path.join(healthyDir, 'bin', 'sing-box'));
 
 function healthyGate() {
   return new healthLib.HealthGate({
@@ -230,8 +238,8 @@ check('a corrupt routing asset reports ASSET_INTEGRITY_FAILED', function () {
   var assetDir = path.join(tmp, 'assets');
   fs.mkdirSync(path.join(assetDir, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(assetDir, 'appinfo.json'), '{}');
-  fs.writeFileSync(path.join(assetDir, 'bin', 'xray'), armElf(16));
-  fs.writeFileSync(path.join(assetDir, 'bin', 'tun2socks'), armElf(16));
+  copyPinnedCore('xray', path.join(assetDir, 'bin', 'xray'));
+  copyPinnedCore('tun2socks', path.join(assetDir, 'bin', 'tun2socks'));
   fs.writeFileSync(path.join(assetDir, 'bin', 'geosite.dat'), 'truncated');
   fs.writeFileSync(path.join(assetDir, 'bin', 'geoip.dat'), 'truncated');
   var problem = gate({ paths: { appDir: assetDir, dataDir: path.join(assetDir, 'nope') } })
@@ -243,7 +251,7 @@ check('the sing-box edition requires no XRay routing assets', function () {
   var sb = path.join(tmp, 'singbox');
   fs.mkdirSync(path.join(sb, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(sb, 'appinfo.json'), '{}');
-  fs.writeFileSync(path.join(sb, 'bin', 'sing-box'), armElf(16));
+  copyPinnedCore('sing-box', path.join(sb, 'bin', 'sing-box'));
   var problem = gate({ edition: { core: 'sing-box' }, paths: { appDir: sb, dataDir: path.join(sb, 'nope') } })
     .check({ homebrewRoot: true, privilege: { root: true } });
   assert.strictEqual(codeOf(problem), 'OK');
@@ -264,8 +272,8 @@ check('repeated polling does not re-hash routing assets', function () {
   var assetDir = path.join(tmp, 'cache');
   fs.mkdirSync(path.join(assetDir, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(assetDir, 'appinfo.json'), '{}');
-  fs.writeFileSync(path.join(assetDir, 'bin', 'xray'), armElf(16));
-  fs.writeFileSync(path.join(assetDir, 'bin', 'tun2socks'), armElf(16));
+  copyPinnedCore('xray', path.join(assetDir, 'bin', 'xray'));
+  copyPinnedCore('tun2socks', path.join(assetDir, 'bin', 'tun2socks'));
   fs.writeFileSync(path.join(assetDir, 'bin', 'geosite.dat'), 'x');
   fs.writeFileSync(path.join(assetDir, 'bin', 'geoip.dat'), 'x');
 
@@ -291,8 +299,8 @@ check('the integrity cache invalidates when file metadata changes', function () 
   var assetDir = path.join(tmp, 'cache2');
   fs.mkdirSync(path.join(assetDir, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(assetDir, 'appinfo.json'), '{}');
-  fs.writeFileSync(path.join(assetDir, 'bin', 'xray'), armElf(16));
-  fs.writeFileSync(path.join(assetDir, 'bin', 'tun2socks'), armElf(16));
+  copyPinnedCore('xray', path.join(assetDir, 'bin', 'xray'));
+  copyPinnedCore('tun2socks', path.join(assetDir, 'bin', 'tun2socks'));
   fs.writeFileSync(path.join(assetDir, 'bin', 'geosite.dat'), 'aaa');
   fs.writeFileSync(path.join(assetDir, 'bin', 'geoip.dat'), 'aaa');
 
@@ -383,8 +391,6 @@ check('the health summary is a bare code with no paths', function () {
 });
 
 /* --- 8. probe removal and method count ---------------------------------- */
-
-var ROOT = path.join(__dirname, '..');
 
 check('no Phase 0 probe marker survives anywhere in the tree', function () {
   var offenders = [];
@@ -530,12 +536,13 @@ check('the builder ships cores under the application payload only', function () 
      double the IPK for no runtime benefit: the resolver reaches the
      application payload. */
   var builder = fs.readFileSync(path.join(ROOT, 'build_ipk.py'), 'utf8');
-  var block = builder.slice(builder.indexOf('service_overrides = {'));
-  block = block.slice(0, block.indexOf('}'));
+  var block = builder.slice(builder.indexOf('service_dir = os.path.join'));
+  block = block.slice(0, block.indexOf('return app_dir, service_dir'));
   ['bin/xray', 'bin/tun2socks', 'bin/sing-box', 'geoip.dat', 'geosite.dat'].forEach(function (token) {
     assert.ok(block.indexOf(token) < 0, 'service payload duplicates ' + token);
   });
-  assert.ok(builder.indexOf('overrides[relative_path] = read(source_path)') >= 0,
+  assert.ok(builder.indexOf('for relative, source in sorted(edition["binaries"].items())') >= 0 &&
+    builder.indexOf('os.path.join(app_dir, *relative.split("/"))') >= 0,
     'app payload must still carry the binaries');
 });
 
