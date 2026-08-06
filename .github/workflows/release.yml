@@ -27,12 +27,12 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26.1"
-          cache: true
+          cache: false
       - name: Install official webOS packager
         run: npm ci
       - name: Build and verify pinned ARM cores
         run: |
-          tools/build-cores.sh
+          bash tools/build-cores.sh
           python tests/binary-provenance.test.py
       - name: Build official verification IPKs
         run: python build_ipk.py --edition all --output-dir release-assets
