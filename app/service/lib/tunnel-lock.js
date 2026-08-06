@@ -11,6 +11,7 @@
    recovery after a crash or an unclean shutdown safe. */
 
 var fs = require('fs');
+var path = require('path');
 var atomic = require('./atomic');
 var errors = require('./errors');
 var err = errors.err;
@@ -60,7 +61,7 @@ TunnelLock.prototype.acquire = function () {
   if (current && current.edition !== this.edition && this.logger) {
     this.logger.info('tunnel lock reclaimed from stale owner', { previous: current.edition });
   }
-  atomic.ensureDir(LOCK_DIR);
+  atomic.ensureDir(path.dirname(this.lockFile));
   atomic.writeJsonAtomic(this.lockFile, {
     edition: this.edition,
     serviceId: this.serviceId,
