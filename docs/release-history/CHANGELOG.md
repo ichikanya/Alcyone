@@ -9,6 +9,8 @@
   mandatory for HTTPS subscription requests and remain forbidden on HTTP.
 - Kept the legacy `compatMode` request and stored-data fields accepted so
   existing importer clients and profiles continue to work.
+- Corrected the XRay provenance hash to the output of the canonical Ubuntu
+  Go 1.26.1 build used by the release workflow.
 
 ## 4.0.3 (2026-07-31)
 

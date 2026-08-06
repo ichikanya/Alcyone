@@ -157,7 +157,7 @@ def verify(path, expected):
         assert prefix + "bin/xray" in data
         assert prefix + "bin/tun2socks" in data
         assert prefix + "bin/sing-box" not in data
-        assert sha256(data[prefix + "bin/xray"]) == "2b861a00e052ca2faad8d50d62934e3706e2e059f1c2efb1f24a9e44659885ff"
+        assert sha256(data[prefix + "bin/xray"]) == "451bfccf7c86f08860296903479d8b92edccc507312b3eb338de33a7cb3dabfb"
         assert sha256(data[prefix + "bin/tun2socks"]) == "b2bbe63f8144ce67a9f8839541428999302b68cd54fbf14f403c73be75cd719a"
         if os.name != "nt":
             assert data_modes[prefix + "bin/xray"] == 0o755
