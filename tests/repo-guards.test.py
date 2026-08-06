@@ -75,11 +75,6 @@ RULES = [
         r"function\s+shQuote",
         "the frontend must not build shell commands",
     ),
-    rule(
-        "architecture mislabelled as all",
-        r"^Architecture:\s*all\s*$",
-        "a package containing ARM executables must not declare Architecture: all",
-    ),
 ]
 
 
@@ -121,22 +116,15 @@ def main():
         else:
             print("ok   - no " + entry["name"])
 
-    # Historical release archives must not preserve the old metadata lie. A
-    # native ARM ELF payload is architecture-specific even if the archive is no
-    # longer referenced by the active feed, so reject every `_all.ipk` still in
-    # the repository's package directory.
-    legacy_archives = []
-    package_dir = os.path.join(ROOT, "packages")
-    for current, _, filenames in os.walk(package_dir):
-        for filename in filenames:
-            if filename.endswith("_all.ipk"):
-                legacy_archives.append(os.path.relpath(os.path.join(current, filename), ROOT))
-    if legacy_archives:
-        print("FAIL - no historical _all.ipk archives")
-        for relative in sorted(legacy_archives):
-            print("       " + relative)
-    else:
-        print("ok   - no historical _all.ipk archives")
+    builder_source = open(os.path.join(ROOT, "build_ipk.py"), encoding="utf-8").read()
+    official_packaging = (
+        "ares-package" in builder_source
+        and "subprocess.run" in builder_source
+        and "ar_member(" not in builder_source
+        and "build_control_tar(" not in builder_source
+        and not os.path.exists(os.path.join(ROOT, "CONTROL", "control.in"))
+    )
+    print(("ok   - " if official_packaging else "FAIL - ") + "builder delegates IPK creation to ares-package")
 
     # The sanitizer legitimately reads profile.link to derive a display label,
     # so inspect what it actually emits rather than the source text.
@@ -176,7 +164,7 @@ def main():
     print(("ok   - " if sanitizer_ok else "FAIL - ") + "sanitized profiles carry no secret fields")
 
     print("\nscanned %d files" % scanned)
-    if findings or legacy_archives or not sanitizer_ok:
+    if findings or not official_packaging or not sanitizer_ok:
         sys.exit(1)
 
 

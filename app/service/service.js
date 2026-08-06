@@ -92,7 +92,7 @@ var importer = new serverLib.ImporterServer({
   port: edition.webPort,
   handlers: {
     importValue: function (value, name, compatMode, cb) {
-      if (typeof compatMode === 'function') { cb = compatMode; compatMode = false; }
+      if (typeof compatMode === 'function') { cb = compatMode; compatMode = true; }
       api.importValue(value, name, compatMode, cb);
     },
     updateSubscriptions: function (id, cb) { api.updateSubscriptions(id ? { subscriptionId: id } : {}, cb); },

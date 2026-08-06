@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.0.4 (2026-08-06)
+
+- Replaced the custom IPK archive writer with the official webOS
+  `@webos-tools/cli` `ares-package` tool and added release-gate checks for its
+  required control metadata.
+- Removed the LAN importer HWID checkbox. Provider identity headers are now
+  mandatory for HTTPS subscription requests and remain forbidden on HTTP.
+- Kept the legacy `compatMode` request and stored-data fields accepted so
+  existing importer clients and profiles continue to work.
+
 ## 4.0.3 (2026-07-31)
 
 - Added checksum-verified runtime staging for every native core and verified

@@ -20,6 +20,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
+          cache: npm
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -27,10 +28,14 @@ jobs:
         with:
           go-version: "1.26.1"
           cache: true
+      - name: Install official webOS packager
+        run: npm ci
       - name: Build and verify pinned ARM cores
         run: |
           tools/build-cores.sh
           python tests/binary-provenance.test.py
+      - name: Build official verification IPKs
+        run: python build_ipk.py --edition all --output-dir release-assets
       - name: Syntax checks
         run: |
           node --check app/app.js
@@ -75,6 +80,10 @@ jobs:
           - sing-box
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -82,6 +91,8 @@ jobs:
         with:
           name: alcyone-cores
           path: build/cores
+      - name: Install official webOS packager
+        run: npm ci
       - name: Build ${{ matrix.edition }} edition
         run: python build_ipk.py --edition "${{ matrix.edition }}" --output-dir dist
       - uses: actions/upload-artifact@v7
@@ -98,14 +109,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v7
-        with:
-          name: alcyone-xray
-          path: dist
-      - uses: actions/download-artifact@v7
-        with:
-          name: alcyone-sing-box
-          path: dist
       - name: Publish canonical release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -115,8 +118,8 @@ jobs:
           # Matrix jobs verify both independent builds; release the exact bytes
           # referenced by the repository feed, manifests, and SHA256SUMS.
           assets=(
-            "dist/Alcyone-XRay_${version}_arm.ipk"
-            "dist/Alcyone-sing-box_${version}_arm.ipk"
+            "release-assets/Alcyone-XRay_${version}.ipk"
+            "release-assets/Alcyone-sing-box_${version}.ipk"
           )
           for asset in "${assets[@]}"; do
             test -f "$asset"

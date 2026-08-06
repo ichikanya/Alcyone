@@ -11,5 +11,5 @@ window.ALCYONE_EDITION = {
   coreLabel: 'XRay',
   editionName: 'XRay Edition',
   title: 'Alcyone XRay',
-  version: '4.0.3'
+  version: '4.0.4'
 };

@@ -97,7 +97,9 @@ function normalize(parsed) {
     if (!parsed.subscriptions[i] || !parsed.subscriptions[i].id || !parsed.subscriptions[i].url) {
       parsed.subscriptions.splice(i, 1);
     } else {
-      parsed.subscriptions[i].compatMode = !!parsed.subscriptions[i].compatMode;
+      /* Preserve the legacy field for stored-data compatibility while making
+         its effective value mandatory for every existing subscription. */
+      parsed.subscriptions[i].compatMode = true;
     }
   }
   if (parsed.subscriptions.length > MAX_SUBSCRIPTIONS) parsed.subscriptions.length = MAX_SUBSCRIPTIONS;
@@ -352,9 +354,7 @@ ProfileStore.prototype.applySubscription = function (subUrl, displayName, import
     store.subscriptions.push(subscription);
   }
   subscription.name = displayName || parsers.profileTitleFromHeaders(headers, subscription.name || '');
-  if (options.compatMode !== undefined) {
-    subscription.compatMode = !!options.compatMode;
-  }
+  subscription.compatMode = true;
   subscription.lastUpdate = now();
   subscription.error = '';
   subscription.subscriptionUserinfo = headers['subscription-userinfo'] || '';

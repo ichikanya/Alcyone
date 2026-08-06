@@ -265,14 +265,16 @@ ImporterServer.prototype.dispatch = function (pathname, payload, callback) {
   try {
     validate.requireObject(payload);
     if (pathname === '/api/import') {
+      /* compatMode remains accepted for older importer pages, but HTTPS HWID
+         policy is mandatory and an old false value cannot turn it off. */
       validate.rejectUnknown(payload, ['name', 'value', 'compatMode']);
-      var compatMode = validate.optionalBoolean(payload, 'compatMode', false);
+      if (payload.compatMode !== undefined) validate.optionalBoolean(payload, 'compatMode', true);
       var val = validate.importValue(payload, 'value');
       var displayName = validate.displayName(payload, 'name');
       if (handlers.importValue && handlers.importValue.length <= 3) {
         return handlers.importValue(val, displayName, callback);
       }
-      return handlers.importValue(val, displayName, compatMode, callback);
+      return handlers.importValue(val, displayName, true, callback);
     }
     if (pathname === '/api/subscriptions/update') {
       validate.rejectUnknown(payload, ['id']);

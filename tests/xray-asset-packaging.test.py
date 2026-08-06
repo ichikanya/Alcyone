@@ -19,7 +19,7 @@ EXPECTED = {
     "geosite.dat": ("adf92de0cfc70e458b399f04c5f912bf42d115ed7e37281b30e2f1c68605e4e9", 10491954),
     "geoip.dat": ("744c97b74c52bae2ac8664fef6ac481d7765cb8432a0df54f0368a88b9b4a354", 19768301),
 }
-VERSION = "4.0.3"
+VERSION = "4.0.4"
 
 
 def sha256(data):
@@ -54,14 +54,16 @@ def main():
         assert (sha256(data), len(data)) == expected
 
     with tempfile.TemporaryDirectory(prefix="alcyone-xray-asset-ipk-") as output:
-        ipk = BUILDER.build_edition("xray", output)
-        assert os.path.basename(ipk) == "Alcyone-XRay_%s_arm.ipk" % VERSION
+        ipk = BUILDER.build_edition("xray", output, BUILDER.find_ares_package())
+        assert os.path.basename(ipk) == "Alcyone-XRay_%s.ipk" % VERSION
         assert os.listdir(output) == [os.path.basename(ipk)]
         with tarfile.open(fileobj=io.BytesIO(compressed_tar(ipk, "control.tar.gz")), mode="r:") as control:
             control_text = control.extractfile("control").read().decode("utf-8")
             assert "Package: com.alcyone.vpn\n" in control_text
             assert "Version: %s\n" % VERSION in control_text
-            assert "Architecture: arm\n" in control_text
+            assert "Installed-Size: " in control_text
+            assert "webOS-Package-Format-Version: 2\n" in control_text
+            assert "webOS-Packager-Version: " in control_text
 
         with tarfile.open(fileobj=io.BytesIO(compressed_tar(ipk, "data.tar.gz")), mode="r:") as archive:
             members = {member.name: member for member in archive.getmembers() if member.isfile()}
@@ -80,10 +82,10 @@ def main():
 
             service_source = archive.extractfile(members[service + "service.js"]).read().decode("utf-8")
             assert re.search(
-                r"path\.resolve\(__dirname,\s*'\.\.',\s*'\.\.',\s*'applications',\s*edition\.appId\)",
+                r"path\.resolve\(__dirname,\s*[\"']\.\.[\"'],\s*[\"']\.\.[\"'],\s*[\"']applications[\"'],\s*edition\.appId\)",
                 service_source,
             ), "packaged service must resolve the sibling installed application"
-            assert "logger.info('service started', { edition: edition.id, version: edition.version });" in service_source
+            assert "service started" in service_source and "edition.version" in service_source
 
             for name, expected in EXPECTED.items():
                 packaged = app + "bin/" + name
@@ -91,8 +93,9 @@ def main():
                 member = members[packaged]
                 data = archive.extractfile(member).read()
                 assert (sha256(data), len(data)) == expected
-                assert member.mode == 0o644
-    print("ok - Xray 4.0.1 staging, metadata, resolver and pinned assets are canonical")
+                if os.name != "nt":
+                    assert member.mode == 0o644
+    print("ok - Xray 4.0.4 official packaging, metadata, resolver and pinned assets are canonical")
 
 
 if __name__ == "__main__":

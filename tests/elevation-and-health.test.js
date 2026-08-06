@@ -423,7 +423,7 @@ check('the builder no longer offers a probe mode', function () {
 
 check('no shipped title, version or metadata carries PROBE', function () {
   var appinfo = JSON.parse(fs.readFileSync(path.join(ROOT, 'app', 'appinfo.json'), 'utf8'));
-  assert.strictEqual(appinfo.version, '4.0.3');
+  assert.strictEqual(appinfo.version, '4.0.4');
   assert.strictEqual(appinfo.title, 'Alcyone XRay');
   assert.ok(appinfo.title.indexOf('PROBE') < 0);
   var html = fs.readFileSync(path.join(ROOT, 'app', 'index.html'), 'utf8');

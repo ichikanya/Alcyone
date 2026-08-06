@@ -1,6 +1,6 @@
 # Alcyone
 
-Alcyone is a VPN client for rooted LG webOS TVs. Version 4.0.3 is available in two independently installable editions that share the same TV UI, subscription importer, routing controls, and web interface.
+Alcyone is a VPN client for rooted LG webOS TVs. Version 4.0.4 is available in two independently installable editions that share the same TV UI, subscription importer, routing controls, and web interface.
 
 | Edition | Best for | Core and identity |
 | --- | --- | --- |
@@ -24,8 +24,8 @@ https://ichikanya.github.io/Alcyone/r.json
 
 The feed lists both editions. For manual installation:
 
-- [Alcyone XRay 4.0.3](https://github.com/ichikanya/Alcyone/releases/download/v4.0.3/Alcyone-XRay_4.0.3.ipk)
-- [Alcyone sing-box 4.0.3](https://github.com/ichikanya/Alcyone/releases/download/v4.0.3/Alcyone-sing-box_4.0.3.ipk)
+- [Alcyone XRay 4.0.4](https://github.com/ichikanya/Alcyone/releases/download/v4.0.4/Alcyone-XRay_4.0.4.ipk)
+- [Alcyone sing-box 4.0.4](https://github.com/ichikanya/Alcyone/releases/download/v4.0.4/Alcyone-sing-box_4.0.4.ipk)
 
 Install an IPK with webOS Dev Manager, `ares-install`, or the Homebrew Channel installation service.
 
@@ -39,10 +39,11 @@ edition with Homebrew Channel's elevation:
 
 ## Build
 
-Git, Go 1.26.1 and Python 3 are required. Build the pinned ARM cores first,
-then package either edition independently:
+Git, Go 1.26.1, Python 3, Node.js and npm are required. Install the pinned
+official webOS CLI, build the ARM cores, then package either edition:
 
 ```sh
+npm ci
 tools/build-cores.sh
 python build_ipk.py --edition xray
 python build_ipk.py --edition sing-box
@@ -57,14 +58,14 @@ python build_ipk.py --edition all
 Artifacts are written to:
 
 ```text
-packages/Alcyone-XRay_4.0.3_arm.ipk
-packages/Alcyone-sing-box_4.0.3_arm.ipk
+release-assets/Alcyone-XRay_4.0.4.ipk
+release-assets/Alcyone-sing-box_4.0.4.ipk
 ```
 
-The builder is deterministic and injects edition-specific metadata, service
-identifiers and binaries into the shared `app/` source. The package
-architecture is derived from the ELF machine type of the bundled cores rather
-than hard-coded. Core provenance, build flags and hashes are recorded in
+The builder stages edition-specific metadata, service identifiers and pinned
+binaries, then delegates IPK creation to the official `ares-package` command
+from `@webos-tools/cli`. It verifies the generated webOS control fields before
+accepting an artifact. Core provenance, build flags and hashes are recorded in
 [cores/provenance.json](cores/provenance.json); rebuild them from pinned
 sources with [tools/build-cores.sh](tools/build-cores.sh).
 
@@ -104,4 +105,4 @@ Feedback and bug reports: [@AlcyoneVPN](https://t.me/AlcyoneVPN)
 
 ## По-русски
 
-Alcyone 4.0.3 выпускается в двух вариантах: **XRay** для больших подписок, XHTTP и полных конфигураций XRay; **sing-box** для маломощных телевизоров, быстрого запуска и минимального количества процессов. Оба варианта имеют прежний интерфейс и устанавливаются независимо. Одновременно запускайте только один VPN-туннель.
+Alcyone 4.0.4 выпускается в двух вариантах: **XRay** для больших подписок, XHTTP и полных конфигураций XRay; **sing-box** для маломощных телевизоров, быстрого запуска и минимального количества процессов. Оба варианта имеют прежний интерфейс и устанавливаются независимо. Одновременно запускайте только один VPN-туннель.

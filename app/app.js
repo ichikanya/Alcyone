@@ -13,7 +13,7 @@
     coreLabel: 'XRay',
     editionName: 'XRay Edition',
     title: 'Alcyone XRay',
-    version: '4.0.3'
+    version: '4.0.4'
   };
   var APP_VERSION = EDITION.version;
   var CORE = EDITION.core;

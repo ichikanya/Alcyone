@@ -94,7 +94,7 @@ The LAN importer speaks **plain HTTP**. A TV cannot obtain a trusted certificate
 for a private address, and shipping a self-signed certificate would train users
 to click through warnings.
 
-This trusted-LAN HTTP limitation remains in 4.0.3. It is not treated as secure
+This trusted-LAN HTTP limitation remains in 4.0.4. It is not treated as secure
 transport, and this release intentionally does not add a self-signed HTTPS
 workaround. Pairing, sessions, CSRF and Origin checks restrict access but do not
 provide confidentiality against a network observer.

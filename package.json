@@ -1,0 +1,9 @@
+{
+  "name": "alcyone-release-tools",
+  "private": true,
+  "version": "4.0.4",
+  "description": "Pinned official webOS packaging toolchain for Alcyone",
+  "devDependencies": {
+    "@webos-tools/cli": "3.2.5"
+  }
+}

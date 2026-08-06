@@ -49,7 +49,6 @@ var STRINGS = {
     'hero.text': 'Add a server link (VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2) or a subscription URL. The TV server list updates automatically.',
     'form.name': 'Name (optional)',
     'form.value': 'Server link or subscription URL',
-    'form.compatMode': 'Provider compatibility mode (send HWID over HTTPS)',
     'form.submit': 'Import',
     'form.updateAll': 'Update all subscriptions',
     'sec.subs': 'Subscriptions',
@@ -186,7 +185,6 @@ function importerPage(lang, data) {
     '<section class="card"><h2>' + esc(t(lang, 'form.submit')) + '</h2>' +
     '<label for="name">' + esc(t(lang, 'form.name')) + '</label><input id="name" maxlength="80">' +
     '<label for="value">' + esc(t(lang, 'form.value')) + '</label><textarea id="value" maxlength="16000"></textarea>' +
-    '<label for="compatMode" style="display:flex;align-items:center;margin:12px 0 6px;color:var(--text);font-size:14px;cursor:pointer"><input type="checkbox" id="compatMode" style="width:auto;margin:0 8px 0 0;cursor:pointer"><span>' + esc(t(lang, 'form.compatMode')) + '</span></label>' +
     '<button class="primary" onclick="doImport()">' + esc(t(lang, 'form.submit')) + '</button>' +
     '<button style="width:100%;margin-top:9px" onclick="updateAll()">' + esc(t(lang, 'form.updateAll')) + '</button>' +
     '<div id="msg" class="msg"></div></section>' +
@@ -199,8 +197,8 @@ function importerPage(lang, data) {
     'x.onreadystatechange=function(){if(x.readyState===4){var j={};try{j=JSON.parse(x.responseText||"{}");}catch(e){}' +
     'if(x.status===401||x.status===403){msg(L.expired);return;}cb(x.status,j);}};' +
     'x.send(body?JSON.stringify(body):null);}' +
-    'function doImport(){msg(L.working);var c=document.getElementById("compatMode");api("POST","/api/import",{name:document.getElementById("name").value,' +
-    'value:document.getElementById("value").value,compatMode:!!(c&&c.checked)},function(s,j){if(!j.ok){msg(j.errorCode||"error");return;}' +
+    'function doImport(){msg(L.working);api("POST","/api/import",{name:document.getElementById("name").value,' +
+    'value:document.getElementById("value").value},function(s,j){if(!j.ok){msg(j.errorCode||"error");return;}' +
     'msg(j.count?L.imported+j.count:L.done);setTimeout(function(){location.reload();},700);});}' +
     'function updateAll(){msg(L.working);api("POST","/api/subscriptions/update",{},function(s,j){' +
     'if(!j.ok){msg(j.errorCode||"error");return;}msg(L.done);setTimeout(function(){location.reload();},700);});}' +

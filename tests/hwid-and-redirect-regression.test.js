@@ -10,6 +10,7 @@ var DeviceInfo = require('../app/service/lib/device-info');
 var loggerLib = require('../app/service/lib/logger');
 var errors = require('../app/service/lib/errors');
 var ImporterServer = require('../app/service/lib/web/server').ImporterServer;
+var templates = require('../app/service/lib/web/templates');
 var Logger = loggerLib.Logger;
 
 /* 1. Device identity must never cross an origin boundary. */
@@ -38,14 +39,15 @@ devInfo.getDeviceInfo(function (err, info) {
   console.log('ok 2 - DeviceInfo returns non-empty 32-char HWID');
 });
 
-/* 3. Headers Generation: HWID-enabled vs HWID-disabled */
+/* 3. Headers generation: mandatory on HTTPS and forbidden on plaintext. */
 var reqOptsEnabled = { compatMode: true, hwid: '0123456789abcdef0123456789abcdef', isHttps: true };
 var headersEnabled = subscriptionsLib.headersFor(0, reqOptsEnabled);
 assert.strictEqual(headersEnabled['X-HWID'], '0123456789abcdef0123456789abcdef', 'HWID-enabled HTTPS request must include X-HWID');
 
 var reqOptsDisabled = { compatMode: false, hwid: '0123456789abcdef0123456789abcdef', isHttps: true };
 var headersDisabled = subscriptionsLib.headersFor(0, reqOptsDisabled);
-assert.strictEqual(headersDisabled['X-HWID'], undefined, 'HWID-disabled request must NOT include X-HWID');
+assert.strictEqual(headersDisabled['X-HWID'], '0123456789abcdef0123456789abcdef',
+  'legacy compatMode=false must not disable HTTPS HWID');
 
 var reqOptsHttp = { compatMode: true, hwid: '0123456789abcdef0123456789abcdef', isHttps: false };
 var headersHttp = subscriptionsLib.headersFor(0, reqOptsHttp);
@@ -75,7 +77,10 @@ var eHwid = errors.err('HWID_REQUIRED', 'Provider requires HWID transmission');
 assert.strictEqual(errors.toResult(eHwid).errorCode, 'HWID_REQUIRED');
 console.log('ok 5 - Provider errors (401, 403, HWID_REQUIRED) are sanitized and distinct from NO_SERVERS_FOUND');
 
-/* 6. Web Import dispatch forwards compatMode */
+/* 6. Web importer has no toggle and enforces compatibility for old requests. */
+var importerHtml = templates.importerPage('en', { profiles: [], subscriptions: [], csrf: 'test' });
+assert.strictEqual(importerHtml.indexOf('type="checkbox"'), -1, 'web importer must not render an HWID checkbox');
+assert.strictEqual(importerHtml.indexOf('compatMode'), -1, 'new web importer requests must not expose compatMode');
 var mockHandlerCalled = false;
 var mockCompatValue = false;
 var dummyLogger = new Logger({ level: 'error' });
@@ -92,11 +97,11 @@ var server = new ImporterServer({
   }
 });
 
-server.dispatch('/api/import', { value: 'https://example.com/sub', name: 'TestSub', compatMode: true }, function (err, res) {
+server.dispatch('/api/import', { value: 'https://example.com/sub', name: 'TestSub', compatMode: false }, function (err, res) {
   assert.ifError(err);
   assert.strictEqual(mockHandlerCalled, true);
-  assert.strictEqual(mockCompatValue, true, 'ImporterServer dispatch must pass compatMode=true to handler');
-  console.log('ok 6 - Web Import endpoint forwards compatMode=true');
+  assert.strictEqual(mockCompatValue, true, 'ImporterServer must override a legacy false value');
+  console.log('ok 6 - Web Import hides the toggle and enforces HTTPS HWID for legacy requests');
 });
 
 /* 7. Secret Scrubbing in Logger */

@@ -56,7 +56,7 @@ function editionFacts(name) {
       coreLabel: 'sing-box',
       editionName: 'sing-box Edition',
       title: 'Alcyone sing-box',
-      version: '4.0.3'
+      version: '4.0.4'
     };
   }
   return {
@@ -66,7 +66,7 @@ function editionFacts(name) {
     coreLabel: 'XRay',
     editionName: 'XRay Edition',
     title: 'Alcyone XRay',
-    version: '4.0.3'
+    version: '4.0.4'
   };
 }
 

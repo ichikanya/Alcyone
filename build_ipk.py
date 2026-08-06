@@ -1,39 +1,31 @@
-"""Build reproducible Alcyone IPKs for the XRay and sing-box editions.
+"""Build Alcyone IPKs with the official webOS ``ares-package`` tool.
 
-Each IPK contains three components:
-
-  usr/palm/applications/<appId>/        the TV web app
-  usr/palm/services/<serviceId>/        the Luna service that owns privileged work
-  usr/palm/packages/<appId>/            packageinfo.json listing both
-
-The control archive holds only `control`. Debian-style maintainer scripts
-(preinst/postinst/prerm) are deliberately absent: webOS does not execute them,
-so all initialization, migration and cleanup lives in idempotent Luna service
-startup code instead.
-
-Architecture is derived from the ELF machine type of the bundled native cores
-rather than hard-coded, and the builder refuses to mislabel a package.
+The Python layer prepares the edition-specific app and Luna service trees,
+verifies pinned native inputs, and hands those directories to ares-package.
+It never creates or modifies an IPK control archive itself.
 """
 
 import argparse
-import io
+import gzip
 import hashlib
+import io
 import json
 import os
 import re
+import shutil
 import struct
-import zlib
+import subprocess
+import tarfile
+import tempfile
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(ROOT, "app")
 SERVICE = os.path.join(APP, "service")
-CONTROL = os.path.join(ROOT, "CONTROL")
 CORES = os.environ.get("ALCYONE_CORES_DIR", os.path.join(ROOT, "build", "cores"))
-VERSION = "4.0.3"
-MTIME = 1700000000
+VERSION = "4.0.4"
+SOURCE_DATE_EPOCH = 1700000000
 
-# ELF e_machine values we know how to label.
 ELF_MACHINES = {
     40: ("arm", "ARM (32-bit)"),
     183: ("aarch64", "AArch64 (64-bit)"),
@@ -41,18 +33,11 @@ ELF_MACHINES = {
     62: ("x86_64", "x86-64"),
 }
 
-# Files that must be executable inside the package.
-EXECUTABLE_PATHS = frozenset(["bin/xray", "bin/tun2socks", "bin/sing-box"])
-
-# Directories excluded from the app payload (the service is packaged separately).
-APP_EXCLUDED_DIRS = frozenset(["service"])
-
-
 EDITIONS = {
     "xray": {
         "app_id": "com.alcyone.vpn",
         "service_id": "com.alcyone.vpn.service",
-        "artifact": "Alcyone-XRay_%s_%s.ipk",
+        "artifact": "Alcyone-XRay_%s.ipk",
         "autostart": "alcyone-vpn",
         "core": "xray",
         "core_label": "XRay",
@@ -72,11 +57,9 @@ EDITIONS = {
         },
     },
     "sing-box": {
-        # Luna service names may not contain '-', so the service id uses
-        # 'singbox' and must remain a prefix-match of the app id.
         "app_id": "com.alcyone.vpn.singbox",
         "service_id": "com.alcyone.vpn.singbox.service",
-        "artifact": "Alcyone-sing-box_%s_%s.ipk",
+        "artifact": "Alcyone-sing-box_%s.ipk",
         "autostart": "alcyone-singbox-vpn",
         "core": "sing-box",
         "core_label": "sing-box",
@@ -99,15 +82,21 @@ def read(path):
         return handle.read()
 
 
-def elf_machine(path):
-    """Return (arch_id, label) for an ELF file, or None when not an ELF."""
-    with open(path, "rb") as handle:
-        header = handle.read(20)
-    if len(header) < 20 or header[:4] != b"\x7fELF":
-        return None
-    little_endian = header[5] == 1
-    machine = struct.unpack("<H" if little_endian else ">H", header[18:20])[0]
-    return ELF_MACHINES.get(machine, ("unknown", "unknown machine %d" % machine))
+def write(path, data, mode=0o644):
+    parent = os.path.dirname(path)
+    if parent and not os.path.isdir(parent):
+        os.makedirs(parent)
+    with open(path, "wb") as handle:
+        handle.write(data)
+    os.chmod(path, mode)
+
+
+def json_bytes(value, compact=False):
+    if compact:
+        text = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    else:
+        text = json.dumps(value, ensure_ascii=False, indent=2)
+    return (text + "\n").encode("utf-8")
 
 
 def sha256_file(path):
@@ -118,138 +107,49 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def elf_machine(path):
+    with open(path, "rb") as handle:
+        header = handle.read(20)
+    if len(header) < 20 or header[:4] != b"\x7fELF":
+        return None
+    little_endian = header[5] == 1
+    machine = struct.unpack("<H" if little_endian else ">H", header[18:20])[0]
+    return ELF_MACHINES.get(machine, ("unknown", "unknown machine %d" % machine))
+
+
 def provenance_digests():
-    """Map each recorded native input path to its pinned sha256."""
-    with open(os.path.join(ROOT, "cores", "provenance.json"), "rb") as handle:
-        manifest = json.loads(handle.read().decode("utf-8"))
+    manifest = json.loads(read(os.path.join(ROOT, "cores", "provenance.json")).decode("utf-8"))
     entries = manifest["components"] + manifest.get("assets", [])
-    return {
-        os.path.basename(component["path"]): component["sha256"]
-        for component in entries
-    }
+    return {os.path.basename(entry["path"]): entry["sha256"] for entry in entries}
 
 
-def verify_binaries(edition):
-    """Refuse to package a native binary that is not the pinned artifact.
-
-    tools/build-cores.sh verifies what it downloads or builds, but nothing
-    guaranteed that the tree it left behind is what actually ships. Re-checking
-    here means a stale, hand-edited or tampered build/cores can never reach a
-    user's TV inside a signed-looking IPK.
-    """
+def verify_inputs(edition):
     pinned = provenance_digests()
-    for relative, source in sorted(edition["binaries"].items()):
+    architectures = set()
+    for source in sorted(list(edition["binaries"].values()) + list(edition["assets"].values())):
         if not os.path.isfile(source):
-            raise SystemExit("missing core binary: " + source)
+            raise SystemExit("missing build input: " + source)
         name = os.path.basename(source)
         if name not in pinned:
-            raise SystemExit("no provenance entry for bundled binary: " + name)
+            raise SystemExit("no provenance entry for build input: " + name)
         actual = sha256_file(source)
         if actual != pinned[name]:
             raise SystemExit(
                 "checksum mismatch for %s: provenance records %s, payload is %s. "
                 "Rebuild with tools/build-cores.sh." % (source, pinned[name], actual)
             )
-
-
-def verify_assets(edition):
-    """Refuse missing, stale or tampered Xray routing data."""
-    pinned = provenance_digests()
-    for relative, source in sorted(edition["assets"].items()):
-        if not os.path.isfile(source):
-            raise SystemExit("missing Xray asset: " + source)
-        name = os.path.basename(source)
-        if name not in pinned:
-            raise SystemExit("no provenance entry for bundled asset: " + name)
-        actual = sha256_file(source)
-        if actual != pinned[name]:
-            raise SystemExit(
-                "checksum mismatch for %s: provenance records %s, payload is %s. "
-                "Rebuild with tools/build-cores.sh xray." % (source, pinned[name], actual)
-            )
-
-
-def edition_architecture(edition):
-    """Derive the package architecture from the bundled native binaries.
-
-    A package containing ARM ELF executables must not claim `all`, so the
-    architecture is read from the payload instead of being asserted.
-    """
-    found = set()
-    for relative, source in sorted(edition["binaries"].items()):
-        if not os.path.isfile(source):
-            raise SystemExit("missing core binary: " + source)
+    for source in sorted(edition["binaries"].values()):
         machine = elf_machine(source)
         if machine is None:
-            raise SystemExit("bundled core is not an ELF executable: " + relative)
-        found.add(machine[0])
-    if not found:
-        return "all"
-    if len(found) > 1:
-        raise SystemExit("mixed architectures in one package: " + ", ".join(sorted(found)))
-    return found.pop()
-
-
-def tar_header(name, mode, size, typeflag):
-    header = bytearray(512)
-    encoded_name = name.encode("utf-8")
-    if len(encoded_name) > 100:
-        raise SystemExit("name too long: " + name)
-    header[0 : len(encoded_name)] = encoded_name
-    header[100:108] = b"%07o\x00" % mode
-    header[108:116] = b"0000000\x00"
-    header[116:124] = b"0000000\x00"
-    header[124:136] = b"%011o\x00" % size
-    header[136:148] = b"%011o\x00" % MTIME
-    header[148:156] = b"        "
-    header[156:157] = typeflag
-    header[257:265] = b"ustar\x0000"
-    header[265:269] = b"root"
-    header[297:301] = b"root"
-    header[148:156] = b"%06o\x00 " % sum(header)
-    return bytes(header)
-
-
-def tar_add_dir(buffer, name):
-    buffer.write(tar_header(name.rstrip("/") + "/", 0o755, 0, b"5"))
-
-
-def tar_add_file(buffer, name, data, mode):
-    buffer.write(tar_header(name, mode, len(data), b"0"))
-    buffer.write(data)
-    buffer.write(b"\x00" * ((512 - len(data) % 512) % 512))
-
-
-def tar_finish(buffer):
-    buffer.write(b"\x00" * 1024)
-    buffer.write(b"\x00" * ((10240 - buffer.tell() % 10240) % 10240))
-
-
-def gzip_bytes(raw, filename):
-    compressor = zlib.compressobj(9, zlib.DEFLATED, -zlib.MAX_WBITS)
-    body = compressor.compress(raw) + compressor.flush()
-    header = (
-        b"\x1f\x8b\x08\x08"
-        + struct.pack("<I", 0)
-        + b"\x02\xff"
-        + filename.encode("ascii")
-        + b"\x00"
-    )
-    trailer = struct.pack("<II", zlib.crc32(raw) & 0xFFFFFFFF, len(raw) & 0xFFFFFFFF)
-    return header + body + trailer
-
-
-def normalize_text(data):
-    return data.replace(b"\r\n", b"\n")
-
-
-def is_text_file(relative):
-    return relative.endswith((".css", ".html", ".js", ".json", ".md", ".svg", ".txt", ".conf"))
+            raise SystemExit("bundled core is not an ELF executable: " + source)
+        architectures.add(machine[0])
+    if len(architectures) != 1:
+        raise SystemExit("mixed or missing native architectures: " + ", ".join(sorted(architectures)))
+    return architectures.pop()
 
 
 def edition_js(edition):
-    """Public, non-secret edition facts consumed by the TV frontend."""
-    public_config = {
+    config = {
         "appId": edition["app_id"],
         "serviceId": edition["service_id"],
         "core": edition["core"],
@@ -258,16 +158,11 @@ def edition_js(edition):
         "title": edition["title"],
         "version": VERSION,
     }
-    return (
-        "window.ALCYONE_EDITION = "
-        + json.dumps(public_config, ensure_ascii=False, separators=(",", ":"))
-        + ";\n"
-    ).encode("utf-8")
+    return ("window.ALCYONE_EDITION = " + json.dumps(config, ensure_ascii=False, separators=(",", ":")) + ";\n").encode("utf-8")
 
 
 def edition_json(edition):
-    """Edition configuration read by the Luna service at startup."""
-    config = {
+    return json_bytes({
         "id": edition["core"],
         "appId": edition["app_id"],
         "serviceId": edition["service_id"],
@@ -279,288 +174,200 @@ def edition_json(edition):
         "dataDir": edition["data_dir"],
         "autostartName": edition["autostart"],
         "webPort": edition["web_port"],
-    }
-    return (json.dumps(config, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    })
 
 
-def generated_appinfo(edition):
+def service_roles(edition):
+    return json_bytes({
+        "exeName": "/usr/bin/node",
+        "type": "regular",
+        "allowedNames": [edition["service_id"]],
+        "permissions": [{
+            "service": edition["service_id"],
+            "inbound": [edition["app_id"]],
+            "outbound": ["com.webos.service.activitymanager"],
+        }],
+    })
+
+
+def prepare_staging(edition, staging_root):
+    app_dir = os.path.join(staging_root, "app")
+    service_dir = os.path.join(staging_root, "service")
+    shutil.copytree(APP, app_dir, ignore=shutil.ignore_patterns("service"))
+    shutil.copytree(SERVICE, service_dir)
+
     appinfo = json.loads(read(os.path.join(APP, "appinfo.json")).decode("utf-8"))
-    appinfo.update(
-        {
-            "id": edition["app_id"],
-            "version": VERSION,
-            "title": edition["title"],
-            "appDescription": edition["description"],
-        }
+    appinfo.update({
+        "id": edition["app_id"],
+        "version": VERSION,
+        "title": edition["title"],
+        "appDescription": edition["description"],
+    })
+    write(os.path.join(app_dir, "appinfo.json"), json_bytes(appinfo))
+    write(os.path.join(app_dir, "edition.js"), edition_js(edition))
+    binary_note = "Alcyone %s %s bundles %s %s for Linux ARMv7. Provenance and checksums are recorded in cores/provenance.json.\n" % (
+        VERSION, edition["edition_name"], edition["core_label"], edition["core_version"]
     )
-    return (json.dumps(appinfo, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    write(os.path.join(app_dir, "bin", "README.txt"), binary_note.encode("utf-8"))
 
+    for relative, source in sorted(edition["binaries"].items()):
+        write(os.path.join(app_dir, *relative.split("/")), read(source), 0o755)
+    for relative, source in sorted(edition["assets"].items()):
+        write(os.path.join(app_dir, *relative.split("/")), read(source))
 
-def generated_service_package_json(edition):
-    return (
-        json.dumps(
-            {
-                "name": edition["service_id"],
-                "version": VERSION,
-                "description": "Alcyone VPN Luna service (%s)" % edition["edition_name"],
-                "main": "service.js",
-                "private": True,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n"
-    ).encode("utf-8")
+    # package.properties is an official ares-package input. It records the
+    # intended executable modes even on hosts whose filesystem cannot express
+    # POSIX execute bits; Linux release builds also preserve the chmod above.
+    executable_names = ",".join(sorted(os.path.basename(path) for path in edition["binaries"]))
+    write(os.path.join(app_dir, "package.properties"), ("filemode.755=" + executable_names + "\n").encode("ascii"))
 
-
-def generated_services_json(edition):
-    """services.json with this edition's service id substituted in."""
-    template = json.loads(read(os.path.join(SERVICE, "services.json")).decode("utf-8"))
-    template["id"] = edition["service_id"]
-    for entry in template.get("services", []):
+    service_package = {
+        "name": edition["service_id"],
+        "version": VERSION,
+        "description": "Alcyone VPN Luna service (%s)" % edition["edition_name"],
+        "main": "service.js",
+        "private": True,
+    }
+    services = json.loads(read(os.path.join(SERVICE, "services.json")).decode("utf-8"))
+    services["id"] = edition["service_id"]
+    for entry in services.get("services", []):
         entry["name"] = edition["service_id"]
-    return (json.dumps(template, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    roles = service_roles(edition)
+    write(os.path.join(service_dir, "package.json"), json_bytes(service_package))
+    write(os.path.join(service_dir, "services.json"), json_bytes(services))
+    write(os.path.join(service_dir, "roles.json"), roles)
+    write(os.path.join(service_dir, "role.json"), roles)
+    write(os.path.join(service_dir, "edition.json"), edition_json(edition))
+    write(os.path.join(service_dir, "countries.js"), read(os.path.join(APP, "countries.js")))
+
+    for current, dirnames, filenames in os.walk(staging_root):
+        for name in dirnames + filenames:
+            path = os.path.join(current, name)
+            try:
+                os.utime(path, (SOURCE_DATE_EPOCH, SOURCE_DATE_EPOCH))
+            except OSError:
+                pass
+    return app_dir, service_dir
 
 
-def generated_service_roles_json(edition):
-    """roles.json declaring LS2 bus permissions for this edition's service."""
-    return (
-        json.dumps(
-            {
-                "exeName": "/usr/bin/node",
-                "type": "regular",
-                "allowedNames": [edition["service_id"]],
-                "permissions": [
-                    {
-                        "service": edition["service_id"],
-                        "inbound": [edition["app_id"]],
-                        "outbound": ["com.webos.service.activitymanager"],
-                    }
-                ],
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n"
-    ).encode("utf-8")
+def find_ares_package(explicit=None):
+    candidates = [explicit, os.environ.get("ARES_PACKAGE")]
+    local_bin = os.path.join(ROOT, "node_modules", ".bin")
+    local_names = ["ares-package.cmd", "ares-package"] if os.name == "nt" else ["ares-package", "ares-package.cmd"]
+    candidates.extend([os.path.join(local_bin, name) for name in local_names])
+    candidates.append(shutil.which("ares-package"))
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+    raise SystemExit("official ares-package not found; run `npm ci` in the repository root")
 
 
-def generated_binary_readme(edition):
-    if edition["core"] == "xray":
-        detail = (
-            "Bundles Xray %s and tun2socks for Linux ARMv7. Provenance and "
-            "checksums are recorded in cores/provenance.json."
-            % edition["core_version"]
-        )
-    else:
-        detail = (
-            "Bundles sing-box %s for Linux ARMv7. The native TUN mode uses one "
-            "core process for low memory use and fast startup. Provenance and "
-            "checksums are recorded in cores/provenance.json."
-            % edition["core_version"]
-        )
-    return ("Alcyone %s %s. %s\n" % (VERSION, edition["edition_name"], detail)).encode("utf-8")
+def run_ares_package(executable, app_dir, service_dir, output_dir):
+    command = [executable, app_dir, service_dir, "--outdir", output_dir]
+    if os.name == "nt" and executable.lower().endswith((".cmd", ".bat")):
+        command = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c"] + command
+    subprocess.run(command, cwd=ROOT, check=True)
 
 
-def app_overrides(edition):
-    overrides = {
-        "appinfo.json": generated_appinfo(edition),
-        "bin/README.txt": generated_binary_readme(edition),
-        "edition.js": edition_js(edition),
-    }
-    for relative_path, source_path in edition["binaries"].items():
-        if not os.path.isfile(source_path):
-            raise SystemExit("missing core binary: " + source_path)
-        overrides[relative_path] = read(source_path)
-    for relative_path, source_path in edition["assets"].items():
-        if not os.path.isfile(source_path):
-            raise SystemExit("missing Xray asset: " + source_path)
-        overrides[relative_path] = read(source_path)
-    return overrides
+def read_ar(path):
+    payload = read(path)
+    if not payload.startswith(b"!<arch>\n"):
+        raise SystemExit("ares-package output has invalid ar magic: " + path)
+    members = {}
+    offset = 8
+    while offset < len(payload):
+        header = payload[offset:offset + 60]
+        if len(header) != 60 or header[58:60] != b"`\n":
+            raise SystemExit("ares-package output has an invalid ar member header")
+        name = header[:16].decode("ascii").strip().rstrip("/")
+        size = int(header[48:58].decode("ascii").strip())
+        offset += 60
+        members[name] = payload[offset:offset + size]
+        offset += size + (size % 2)
+    return members
 
 
-def walk_files(base, excluded_dirs=frozenset()):
-    """Collect (directories, files) under `base`, deterministically ordered."""
-    directories = set()
-    files = {}
-    for current, dirnames, filenames in os.walk(base):
-        dirnames[:] = sorted(d for d in dirnames if d not in excluded_dirs)
-        filenames.sort()
-        relative_dir = os.path.relpath(current, base)
-        if relative_dir == ".":
-            relative_dir = ""
-        for dirname in dirnames:
-            directories.add(os.path.join(relative_dir, dirname).replace(os.sep, "/"))
-        for filename in filenames:
-            relative = os.path.join(relative_dir, filename).replace(os.sep, "/")
-            files[relative] = os.path.join(current, filename)
-    return directories, files
+def control_metadata(path):
+    members = read_ar(path)
+    if "control.tar.gz" not in members:
+        raise SystemExit("ares-package output is missing control.tar.gz")
+    with tarfile.open(fileobj=io.BytesIO(gzip.decompress(members["control.tar.gz"])), mode="r:") as archive:
+        control_member = next((member for member in archive.getmembers() if member.name.lstrip("./") == "control"), None)
+        if control_member is None:
+            raise SystemExit("ares-package output is missing control metadata")
+        text = archive.extractfile(control_member).read().decode("utf-8")
+    metadata = {}
+    for line in text.splitlines():
+        if ":" in line:
+            key, value = line.split(":", 1)
+            metadata[key] = value.strip()
+    return metadata, text
 
 
-def render_control(edition, architecture):
-    replacements = {
-        "@APP_ID@": edition["app_id"],
-        "@VERSION@": VERSION,
-        "@ARCH@": architecture,
-        "@DESCRIPTION@": edition["description"],
-    }
-    text = read(os.path.join(CONTROL, "control.in")).decode("utf-8")
-    for token, value in replacements.items():
-        text = text.replace(token, str(value))
-    if re.search(r"@[A-Z_]+@", text):
-        raise SystemExit("unresolved packaging token in control.in")
-    return normalize_text(text.encode("utf-8"))
+def verify_official_metadata(path, edition):
+    metadata, text = control_metadata(path)
+    required = ("Installed-Size", "webOS-Package-Format-Version", "webOS-Packager-Version")
+    missing = [field for field in required if not metadata.get(field)]
+    if missing:
+        raise SystemExit("ares-package control metadata is missing: " + ", ".join(missing))
+    if metadata.get("Package") != edition["app_id"]:
+        raise SystemExit("unexpected Package field in ares-package output")
+    if metadata.get("Version") != VERSION:
+        raise SystemExit("unexpected Version field in ares-package output")
+    if metadata["webOS-Package-Format-Version"] != "2":
+        raise SystemExit("webOS-Package-Format-Version must be 2")
+    try:
+        if int(metadata["Installed-Size"]) <= 0:
+            raise ValueError()
+    except ValueError:
+        raise SystemExit("Installed-Size must be a positive integer")
+    print("verified official control metadata:\n" + text.rstrip())
 
 
-def build_control_tar(edition, architecture):
-    """Control archive holds `control` only: webOS ignores maintainer scripts."""
-    buffer = io.BytesIO()
-    tar_add_file(buffer, "control", render_control(edition, architecture), 0o644)
-    tar_finish(buffer)
-    return buffer.getvalue()
-
-
-def build_data_tar(edition):
-    app_prefix = "usr/palm/applications/" + edition["app_id"]
-    service_prefix = "usr/palm/services/" + edition["service_id"]
-    package_prefix = "usr/palm/packages/" + edition["app_id"]
-
-    overrides = app_overrides(edition)
-    app_dirs, app_files = walk_files(APP, APP_EXCLUDED_DIRS)
-    service_dirs, service_files = walk_files(SERVICE)
-
-    for relative in overrides:
-        parent = os.path.dirname(relative).replace(os.sep, "/")
-        while parent:
-            app_dirs.add(parent)
-            parent = os.path.dirname(parent).replace(os.sep, "/")
-
-    buffer = io.BytesIO()
-    for directory in (
-        "usr",
-        "usr/palm",
-        "usr/palm/applications",
-        app_prefix,
-        "usr/palm/services",
-        service_prefix,
-        "usr/palm/packages",
-        package_prefix,
-    ):
-        tar_add_dir(buffer, directory)
-
-    for relative in sorted(app_dirs):
-        tar_add_dir(buffer, app_prefix + "/" + relative)
-    for relative in sorted(set(app_files) | set(overrides)):
-        data = overrides.get(relative)
-        if data is None:
-            data = read(app_files[relative])
-        if is_text_file(relative):
-            data = normalize_text(data)
-        mode = 0o755 if relative in EXECUTABLE_PATHS else 0o644
-        tar_add_file(buffer, app_prefix + "/" + relative, data, mode)
-
-    service_overrides = {
-        "package.json": generated_service_package_json(edition),
-        "services.json": generated_services_json(edition),
-        "roles.json": generated_service_roles_json(edition),
-        "role.json": generated_service_roles_json(edition),
-        "edition.json": edition_json(edition),
-        "countries.js": read(os.path.join(APP, "countries.js")),
-    }
-    for relative in sorted(service_dirs):
-        tar_add_dir(buffer, service_prefix + "/" + relative)
-    for relative in sorted(set(service_files) | set(service_overrides)):
-        data = service_overrides.get(relative)
-        if data is None:
-            data = read(service_files[relative])
-        if is_text_file(relative):
-            data = normalize_text(data)
-        tar_add_file(buffer, service_prefix + "/" + relative, data, 0o644)
-
-    # The package manifest must list the service, or webOS will not register it.
-    packageinfo = json.dumps(
-        {
-            "id": edition["app_id"],
-            "app": edition["app_id"],
-            "services": [edition["service_id"]],
-            "version": VERSION,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8") + b"\n"
-    tar_add_file(buffer, package_prefix + "/packageinfo.json", packageinfo, 0o644)
-
-    tar_finish(buffer)
-    return buffer.getvalue()
-
-
-def ar_member(name, data):
-    header = (
-        "%-16s%-12s%-6s%-6s%-8s%-10d`\n" % (name + "/", "0", "0", "0", "100644", len(data))
-    ).encode("ascii")
-    return header + data + (b"\n" if len(data) % 2 else b"")
-
-
-def build_edition(name, output_dir, label=""):
+def build_edition(name, output_dir, ares_package, label=""):
     edition = EDITIONS[name]
-    verify_binaries(edition)
-    verify_assets(edition)
-    architecture = edition_architecture(edition)
-    control_tar = gzip_bytes(build_control_tar(edition, architecture), "control.tar")
-    data_tar = gzip_bytes(build_data_tar(edition), "data.tar")
+    payload_arch = verify_inputs(edition)
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
-    # A label distinguishes an unpublished candidate from the release it was
-    # built from, without touching the package's declared version: webOS
-    # requires appinfo.json's version to stay a numeric triplet, so the label
-    # belongs in the filename and nowhere else.
-    output_path = os.path.join(
-        output_dir, edition["artifact"] % (VERSION + label, architecture)
-    )
-    with open(output_path, "wb") as handle:
-        handle.write(b"!<arch>\n")
-        handle.write(ar_member("debian-binary", b"2.0\n"))
-        handle.write(ar_member("control.tar.gz", control_tar))
-        handle.write(ar_member("data.tar.gz", data_tar))
-    print(
-        "built: %s (%d bytes, %s, Architecture: %s)"
-        % (
-            os.path.abspath(output_path),
-            os.path.getsize(output_path),
-            edition["edition_name"],
-            architecture,
-        )
-    )
+    with tempfile.TemporaryDirectory(prefix=".tmp-alcyone-%s-" % name, dir=ROOT) as staging_root:
+        app_dir, service_dir = prepare_staging(edition, staging_root)
+        package_dir = os.path.join(staging_root, "dist")
+        os.makedirs(package_dir)
+        run_ares_package(ares_package, app_dir, service_dir, package_dir)
+        candidates = [
+            os.path.join(package_dir, filename)
+            for filename in os.listdir(package_dir)
+            if filename.endswith(".ipk")
+        ]
+        if len(candidates) != 1:
+            raise SystemExit("ares-package produced %d IPKs; expected exactly one" % len(candidates))
+        verify_official_metadata(candidates[0], edition)
+        output_path = os.path.join(output_dir, edition["artifact"] % (VERSION + label))
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        shutil.move(candidates[0], output_path)
+    print("built with official ares-package: %s (%d bytes, payload: %s)" % (
+        os.path.abspath(output_path), os.path.getsize(output_path), payload_arch
+    ))
     return output_path
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--edition",
-        choices=("all", "xray", "sing-box"),
-        default="all",
-        help="edition to build (default: all)",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default=os.path.join(ROOT, "release-assets"),
-        help="directory for generated IPKs",
-    )
-    parser.add_argument(
-        "--label",
-        default="",
-        help="filename-only suffix marking an unpublished candidate build",
-    )
+    parser.add_argument("--edition", choices=("all", "xray", "sing-box"), default="all")
+    parser.add_argument("--output-dir", default=os.path.join(ROOT, "release-assets"))
+    parser.add_argument("--label", default="", help="filename-only suffix for an unpublished candidate")
+    parser.add_argument("--ares-package", help="path to the official ares-package executable")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    names = ("xray", "sing-box") if args.edition == "all" else (args.edition,)
+    executable = find_ares_package(args.ares_package)
     label = re.sub(r"[^A-Za-z0-9._-]", "", args.label)
+    names = ("xray", "sing-box") if args.edition == "all" else (args.edition,)
     for name in names:
-        build_edition(name, os.path.abspath(args.output_dir), label)
+        build_edition(name, os.path.abspath(args.output_dir), executable, label)
 
 
 if __name__ == "__main__":

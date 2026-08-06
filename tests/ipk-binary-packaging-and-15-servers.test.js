@@ -166,9 +166,9 @@ function unpackDataTarFromIpk(ipkPath) {
   throw new Error('data.tar.gz not found in ' + ipkPath);
 }
 
-var packagesDir = path.join(__dirname, '..', 'packages');
-var xrayIpk = path.join(packagesDir, 'Alcyone-XRay_4.0.3_arm.ipk');
-var singboxIpk = path.join(packagesDir, 'Alcyone-sing-box_4.0.3_arm.ipk');
+var packagesDir = path.join(__dirname, '..', 'release-assets');
+var xrayIpk = path.join(packagesDir, 'Alcyone-XRay_4.0.4.ipk');
+var singboxIpk = path.join(packagesDir, 'Alcyone-sing-box_4.0.4.ipk');
 
 assert.ok(fs.existsSync(xrayIpk), 'XRay IPK package must exist');
 assert.ok(fs.existsSync(singboxIpk), 'sing-box IPK package must exist');

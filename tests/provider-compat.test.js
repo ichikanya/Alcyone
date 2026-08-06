@@ -27,7 +27,6 @@ var FIXTURE_URL = 'https://fixture.example.test/provider-compat';
 var NESTED_URL = 'https://nested.fixture.example.test/list';
 var FIXTURE_BODY = fs.readFileSync(path.join(__dirname, 'fixtures', 'subscription-active.txt'), 'utf8');
 var realFetchUrl = httpClient.fetchUrl;
-var expectCompat = true;
 httpClient.fetchUrl = function (url, options, callback) {
   if (url === NESTED_URL) {
     assert.strictEqual(options.headers['X-HWID'], undefined,
@@ -39,14 +38,9 @@ httpClient.fetchUrl = function (url, options, callback) {
     });
   }
   if (url !== FIXTURE_URL) return realFetchUrl(url, options, callback);
-  if (expectCompat) {
-    /* Assert the compatibility headers actually reached the transport. */
-    assert.ok(options.headers['X-HWID'], 'compatMode over HTTPS must send X-HWID');
-    assert.equal(options.headers['X-Device-OS'], 'webOS');
-  } else {
-    assert.strictEqual(options.headers['X-HWID'], undefined);
-    assert.strictEqual(options.headers['X-Device-OS'], undefined);
-  }
+  /* Assert the mandatory HTTPS compatibility headers reached the transport. */
+  assert.ok(options.headers['X-HWID'], 'every HTTPS subscription must send X-HWID');
+  assert.equal(options.headers['X-Device-OS'], 'webOS');
   process.nextTick(function () {
     callback(null, FIXTURE_BODY, { 'content-type': 'text/plain; charset=utf-8' });
   });
@@ -100,15 +94,15 @@ deviceInfo.getHwid(function (err, hwid) {
   assert.equal(headersHttpCompat['User-Agent'], subscriptions.CLIENT_PROFILES[0].ua);
   console.log('ok   - headersFor suppresses X-HWID for plaintext HTTP (HTTPS only policy)');
 
-  /* 4. Headers verification: HTTPS + compatMode=false */
+  /* 4. A legacy false toggle is accepted but cannot disable HTTPS HWID. */
   var headersHttpsDefault = subscriptions.headersFor(0, {
     compatMode: false,
     isHttps: true,
     hwid: hwid
   });
-  assert.strictEqual(headersHttpsDefault['X-HWID'], undefined);
-  assert.equal(headersHttpsDefault['User-Agent'], subscriptions.CLIENT_PROFILES[0].ua);
-  console.log('ok   - headersFor suppresses X-HWID when compatMode=false');
+  assert.equal(headersHttpsDefault['X-HWID'], hwid);
+  assert.equal(headersHttpsDefault['User-Agent'], 'Happ/4.0.0/webOS');
+  console.log('ok   - legacy compatMode=false cannot disable HTTPS HWID');
 
   /* 5. Log scrubbing */
   logger.info('testing hwid log scrub', { hwid: hwid, x_hwid: hwid, token: 'secret-token' });
@@ -123,13 +117,12 @@ deviceInfo.getHwid(function (err, hwid) {
     assert.strictEqual(addRes.count, 15, 'Compatibility-mode import must yield the fixture server set');
     console.log('ok   - subscription imported in compatibility mode with ' + addRes.count + ' profiles');
 
-    /* 7. The same last-working provider fixture must also import in ordinary
-       mode without acquiring any compatibility identity. */
-    expectCompat = false;
+    /* 7. Existing clients may still send false; it remains schema-compatible
+       while the mandatory HTTPS identity policy stays enabled. */
     api.addSubscription({ url: FIXTURE_URL, name: 'Ordinary Fixture Test', compatMode: false }, function (ordinaryErr, ordinaryRes) {
       assert.ifError(ordinaryErr);
       assert.strictEqual(ordinaryRes.count, 15);
-      console.log('ok   - ordinary subscription import works without compatibility headers');
+      console.log('ok   - legacy compatMode=false request imports with mandatory HTTPS headers');
 
       /* 8. Nested subscription downloads use the same explicit header set and
          retain safe stage metadata on failures. */

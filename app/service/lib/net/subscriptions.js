@@ -35,8 +35,7 @@ function markNested(error) {
   return err((error && error.code) || 'NETWORK_ERROR', (error && error.detail) || '', nestedMeta);
 }
 
-/* Client identities. Only non-identifying headers are sent; no device or
-   hardware identifiers are derived or transmitted. */
+/* Client identities used while negotiating provider response formats. */
 var CLIENT_PROFILES = [
   { name: 'Happ', ua: 'Happ/3.1.0/android' },
   { name: 'sing-box', ua: 'sing-box/1.13.0' },
@@ -52,8 +51,9 @@ function headersFor(index, options) {
     'User-Agent': profile.ua,
     'Accept': '*/*'
   };
-  /* Provider compatibility mode: explicitly requested by user and restricted to verified HTTPS URLs only. */
-  if (options.compatMode && options.isHttps && options.hwid) {
+  /* Provider compatibility is always on for HTTPS. The transport-level HTTPS
+     check is the enforcement boundary: an HWID must never cross plaintext. */
+  if (options.isHttps && options.hwid) {
     headers['User-Agent'] = options.ua || 'Happ/4.0.0/webOS';
     headers['X-HWID'] = options.hwid;
     headers['X-Device-OS'] = options.deviceOS || 'webOS';
@@ -127,7 +127,6 @@ function fetchCandidate(url, clientIndex, deadline, callback, options) {
   options = options || {};
   var isHttps = /^https:/i.test(url);
   var reqOptions = {
-    compatMode: !!options.compatMode,
     hwid: options.hwid || '',
     isHttps: isHttps,
     ua: options.ua,

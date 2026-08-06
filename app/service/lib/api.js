@@ -199,13 +199,15 @@ function getHwid(ctx, callback) {
 
 Api.prototype.addSubscription = guard(function (payload, callback) {
   var ctx = this.ctx;
-  var url, name, compatMode;
+  var url, name;
   validate.rejectUnknown(validate.requireObject(payload), ['url', 'name', 'compatMode']);
   url = validate.subscriptionUrl(payload, 'url');
   name = validate.displayName(payload, 'name');
-  compatMode = validate.optionalBoolean(payload, 'compatMode', false);
+  /* Keep accepting the legacy field, but never let an old client disable the
+     mandatory HTTPS-only provider identity policy. */
+  if (payload.compatMode !== undefined) validate.optionalBoolean(payload, 'compatMode', true);
   getHwid(ctx, function (hwidErr, hwid) {
-    var options = { compatMode: compatMode, hwid: hwid };
+    var options = { compatMode: true, hwid: hwid };
     subscriptionsLib.download(url, function (downloadError, result) {
       if (downloadError) {
         ctx.logger.warn('subscription import failed', { code: downloadError.code || 'INTERNAL' });
@@ -225,10 +227,10 @@ Api.prototype.addSubscription = guard(function (payload, callback) {
 
 Api.prototype.updateSubscriptions = guard(function (payload, callback) {
   var ctx = this.ctx;
-  var only, store, targets, index = 0, updated = 0, failures = [], payloadCompatMode;
+  var only, store, targets, index = 0, updated = 0, failures = [];
   validate.rejectUnknown(validate.requireObject(payload), ['subscriptionId', 'compatMode']);
   only = validate.profileId(payload, 'subscriptionId', false);
-  payloadCompatMode = (payload.compatMode !== undefined) ? validate.optionalBoolean(payload, 'compatMode', false) : undefined;
+  if (payload.compatMode !== undefined) validate.optionalBoolean(payload, 'compatMode', true);
   store = ctx.store.read();
   targets = store.subscriptions.filter(function (s) { return !only || s.id === only; });
   if (only && !targets.length) return callback(err('SUBSCRIPTION_NOT_FOUND', 'unknown subscription'));
@@ -239,8 +241,7 @@ Api.prototype.updateSubscriptions = guard(function (payload, callback) {
         return callback(null, { updated: updated, failed: failures.length, failures: failures });
       }
       var subscription = targets[index++];
-      var compatMode = (payloadCompatMode !== undefined) ? payloadCompatMode : !!subscription.compatMode;
-      var options = { compatMode: compatMode, hwid: hwid };
+      var options = { compatMode: true, hwid: hwid };
       subscriptionsLib.download(subscription.url, function (downloadError, result) {
         if (downloadError) {
           failures.push({ id: subscription.id, errorCode: downloadError.code });
@@ -267,10 +268,10 @@ Api.prototype.deleteSubscription = guard(function (payload, callback) {
 
 /* Combined entry point used by the LAN importer form. */
 Api.prototype.importValue = function (value, name, compatMode, callback) {
-  if (typeof compatMode === 'function') { callback = compatMode; compatMode = false; }
+  if (typeof compatMode === 'function') { callback = compatMode; compatMode = true; }
   var self = this;
   if (/^https?:\/\//i.test(value)) {
-    return this.addSubscription({ url: value, name: name, compatMode: compatMode }, callback);
+    return this.addSubscription({ url: value, name: name, compatMode: true }, callback);
   }
   if (!parsers.PROTO_RE.test(value)) return callback(err('INVALID_LINK', 'unsupported input'));
   return self.importLink({ link: value, name: name }, callback);
