@@ -26,7 +26,7 @@ var errors = require('./errors');
 var err = errors.err;
 
 var PINNED_SHA256 = {
-  xray: '2b861a00e052ca2faad8d50d62934e3706e2e059f1c2efb1f24a9e44659885ff',
+  xray: '451bfccf7c86f08860296903479d8b92edccc507312b3eb338de33a7cb3dabfb',
   tun2socks: 'b2bbe63f8144ce67a9f8839541428999302b68cd54fbf14f403c73be75cd719a',
   'sing-box': 'e1db083cfc4fd9c6c93ce75eaeab9f6b59b490fe8258cd28e970ede28412f8e6'
 };
