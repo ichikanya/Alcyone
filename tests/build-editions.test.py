@@ -83,8 +83,11 @@ def verify(path, expected):
     control_text = control["control"].decode("utf-8")
     assert "Package: %s\n" % expected["app_id"] in control_text
     assert "Version: %s\n" % VERSION in control_text
-    if os.name != "nt":
-        assert control_modes["control"] == 0o644
+    # ares-package creates this file itself; its write mode follows the host
+    # umask (commonly 0644 or 0664), so verify safe readability rather than
+    # imposing a mode the official tool does not promise.
+    assert control_modes["control"] & 0o444 == 0o444
+    assert control_modes["control"] & 0o111 == 0
     assert "Installed-Size: " in control_text
     assert "webOS-Package-Format-Version: 2\n" in control_text
     assert "webOS-Packager-Version: " in control_text
@@ -104,8 +107,8 @@ def verify(path, expected):
     packageinfo = json.loads(data[packageinfo_path].decode("utf-8"))
     assert packageinfo["app"] == expected["app_id"]
     assert packageinfo["services"] == [expected["service_id"]], packageinfo
-    if os.name != "nt":
-        assert data_modes[packageinfo_path] == 0o644
+    assert data_modes[packageinfo_path] & 0o444 == 0o444
+    assert data_modes[packageinfo_path] & 0o111 == 0
 
     # The Luna service must be present and correctly identified.
     assert service_prefix + "service.js" in data, "service entry point missing"
