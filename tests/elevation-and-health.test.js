@@ -50,10 +50,13 @@ function armElf(extra) {
   return buffer;
 }
 
-function copyPinnedCore(name, destination) {
-  var relative = name === 'xray' ? ['xray', 'xray'] : [name, name];
-  fs.writeFileSync(destination,
-    fs.readFileSync(path.join.apply(path, [ROOT, 'build', 'cores'].concat(relative))));
+function writeHealthyCore(destination) {
+  var machines = { arm: 40, arm64: 40, ia32: 3, x64: 62 };
+  var buffer = armElf(64);
+  if (process.platform === 'linux' && machines[process.arch]) {
+    buffer.writeUInt16LE(machines[process.arch], 18);
+  }
+  fs.writeFileSync(destination, buffer);
   fs.chmodSync(destination, 493); /* 0755; old-JavaScript-compatible literal */
 }
 
@@ -67,8 +70,8 @@ fs.mkdirSync(path.join(dataDir, 'bin'), { recursive: true });
 fs.mkdirSync(serviceDir, { recursive: true });
 fs.writeFileSync(path.join(appDir, 'appinfo.json'), '{"id":"com.alcyone.vpn"}');
 fs.writeFileSync(path.join(serviceDir, 'service.js'), '/* stub */');
-copyPinnedCore('xray', path.join(appDir, 'bin', 'xray'));
-copyPinnedCore('tun2socks', path.join(appDir, 'bin', 'tun2socks'));
+writeHealthyCore(path.join(appDir, 'bin', 'xray'));
+writeHealthyCore(path.join(appDir, 'bin', 'tun2socks'));
 
 var paths = { appDir: appDir, dataDir: dataDir };
 
@@ -81,7 +84,7 @@ var paths = { appDir: appDir, dataDir: dataDir };
 var healthyDir = path.join(tmp, 'healthy');
 fs.mkdirSync(path.join(healthyDir, 'bin'), { recursive: true });
 fs.writeFileSync(path.join(healthyDir, 'appinfo.json'), '{}');
-copyPinnedCore('sing-box', path.join(healthyDir, 'bin', 'sing-box'));
+writeHealthyCore(path.join(healthyDir, 'bin', 'sing-box'));
 
 function healthyGate() {
   return new healthLib.HealthGate({
@@ -238,8 +241,8 @@ check('a corrupt routing asset reports ASSET_INTEGRITY_FAILED', function () {
   var assetDir = path.join(tmp, 'assets');
   fs.mkdirSync(path.join(assetDir, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(assetDir, 'appinfo.json'), '{}');
-  copyPinnedCore('xray', path.join(assetDir, 'bin', 'xray'));
-  copyPinnedCore('tun2socks', path.join(assetDir, 'bin', 'tun2socks'));
+  writeHealthyCore(path.join(assetDir, 'bin', 'xray'));
+  writeHealthyCore(path.join(assetDir, 'bin', 'tun2socks'));
   fs.writeFileSync(path.join(assetDir, 'bin', 'geosite.dat'), 'truncated');
   fs.writeFileSync(path.join(assetDir, 'bin', 'geoip.dat'), 'truncated');
   var problem = gate({ paths: { appDir: assetDir, dataDir: path.join(assetDir, 'nope') } })
@@ -251,7 +254,7 @@ check('the sing-box edition requires no XRay routing assets', function () {
   var sb = path.join(tmp, 'singbox');
   fs.mkdirSync(path.join(sb, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(sb, 'appinfo.json'), '{}');
-  copyPinnedCore('sing-box', path.join(sb, 'bin', 'sing-box'));
+  writeHealthyCore(path.join(sb, 'bin', 'sing-box'));
   var problem = gate({ edition: { core: 'sing-box' }, paths: { appDir: sb, dataDir: path.join(sb, 'nope') } })
     .check({ homebrewRoot: true, privilege: { root: true } });
   assert.strictEqual(codeOf(problem), 'OK');
@@ -272,8 +275,8 @@ check('repeated polling does not re-hash routing assets', function () {
   var assetDir = path.join(tmp, 'cache');
   fs.mkdirSync(path.join(assetDir, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(assetDir, 'appinfo.json'), '{}');
-  copyPinnedCore('xray', path.join(assetDir, 'bin', 'xray'));
-  copyPinnedCore('tun2socks', path.join(assetDir, 'bin', 'tun2socks'));
+  writeHealthyCore(path.join(assetDir, 'bin', 'xray'));
+  writeHealthyCore(path.join(assetDir, 'bin', 'tun2socks'));
   fs.writeFileSync(path.join(assetDir, 'bin', 'geosite.dat'), 'x');
   fs.writeFileSync(path.join(assetDir, 'bin', 'geoip.dat'), 'x');
 
@@ -299,8 +302,8 @@ check('the integrity cache invalidates when file metadata changes', function () 
   var assetDir = path.join(tmp, 'cache2');
   fs.mkdirSync(path.join(assetDir, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(assetDir, 'appinfo.json'), '{}');
-  copyPinnedCore('xray', path.join(assetDir, 'bin', 'xray'));
-  copyPinnedCore('tun2socks', path.join(assetDir, 'bin', 'tun2socks'));
+  writeHealthyCore(path.join(assetDir, 'bin', 'xray'));
+  writeHealthyCore(path.join(assetDir, 'bin', 'tun2socks'));
   fs.writeFileSync(path.join(assetDir, 'bin', 'geosite.dat'), 'aaa');
   fs.writeFileSync(path.join(assetDir, 'bin', 'geoip.dat'), 'aaa');
 
