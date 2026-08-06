@@ -51,7 +51,7 @@ function armElf(extra) {
 }
 
 function copyPinnedCore(name, destination) {
-  var relative = name === 'sing-box' ? ['sing-box', 'sing-box'] : ['xray', name];
+  var relative = name === 'xray' ? ['xray', 'xray'] : [name, name];
   fs.writeFileSync(destination,
     fs.readFileSync(path.join.apply(path, [ROOT, 'build', 'cores'].concat(relative))));
   fs.chmodSync(destination, 493); /* 0755; old-JavaScript-compatible literal */
