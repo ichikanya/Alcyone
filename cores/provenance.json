@@ -3,6 +3,32 @@
   "description": "Pinned provenance for native files generated into build/cores. Native executables are release inputs, not repository source files.",
   "components": [
     {
+      "name": "alcyone-netguard",
+      "path": "build/cores/netguard/alcyone-netguard",
+      "upstreamRepository": "local:tools/alcyone-netguard.c",
+      "upstreamTag": "4.2.1",
+      "upstreamCommit": "aaa96618e0d0fb969d76a7073f3a7ec0b24d9268",
+      "sourceSha256": "8ba02b5f858abfa851e366713109fc201914ec8d6537f50b27e264947b5a235d",
+      "acquisition": "reproducible-source-build",
+      "toolchain": "zig 0.16.0",
+      "toolchainArchive": "https://ziglang.org/download/0.16.0/zig-x86_64-windows-0.16.0.zip",
+      "toolchainArchiveSha256": "68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e",
+      "buildFlags": [
+        "-target=arm-linux-musleabihf",
+        "-Os",
+        "-static",
+        "-s"
+      ],
+      "featuresEnabled": ["rtnetlink-fail-open", "heartbeat-lease", "post-mortem-marker"],
+      "featuresDisabled": ["shell", "fork", "exec", "dynamic-linking"],
+      "outputArchitecture": "linux/arm/v7 hard-float",
+      "elfMachine": 40,
+      "sha256": "765d24c6645706dd6d2b5df6fedfe3e886e4fc6605916da3bb3fe6227e9ba08f",
+      "sizeBytes": 46760,
+      "license": "MIT",
+      "licenseFile": "cores/licenses/alcyone-netguard-LICENSE"
+    },
+    {
       "name": "alcyone-exec",
       "path": "build/cores/launcher/alcyone-exec",
       "upstreamRepository": "local:tools/alcyone-exec.c",

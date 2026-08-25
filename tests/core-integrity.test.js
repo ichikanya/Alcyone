@@ -16,6 +16,13 @@ var provenance = require(path.join(ROOT, "cores", "provenance.json"));
 
 var sources = {
   "alcyone-exec": path.join(ROOT, "build", "cores", "launcher", "alcyone-exec"),
+  "alcyone-netguard": path.join(
+    ROOT,
+    "build",
+    "cores",
+    "netguard",
+    "alcyone-netguard",
+  ),
   xray: path.join(ROOT, "build", "cores", "xray", "xray"),
   tun2socks: path.join(ROOT, "build", "cores", "tun2socks", "tun2socks"),
   "sing-box": path.join(ROOT, "build", "cores", "sing-box", "sing-box"),

@@ -147,6 +147,23 @@ build_launcher() {
     report "${OUT_DIR}/launcher/alcyone-exec"
 }
 
+build_netguard() {
+    # Same contract as the launcher: static musl ARMv7 hard-float, no
+    # dynamic dependencies. The guardian is the last line of defense for
+    # ordinary internet; its size ceiling stays bounded on principle.
+    command -v zig >/dev/null 2>&1 || die "zig toolchain not found"
+    actual_zig="$(zig version 2>/dev/null || echo unknown)"
+    [ "${actual_zig}" = "${ZIG_VERSION}" ] ||
+        die "expected zig ${ZIG_VERSION}, got ${actual_zig}"
+    mkdir -p -- "${OUT_DIR}/netguard"
+    zig cc -target arm-linux-musleabihf -Os -static -s \
+        -o "${OUT_DIR}/netguard/alcyone-netguard" "${ROOT}/tools/alcyone-netguard.c"
+    size="$(wc -c < "${OUT_DIR}/netguard/alcyone-netguard" | tr -d ' ')"
+    [ "${size}" -le 131072 ] || die "alcyone-netguard exceeds 128 KiB: ${size}"
+    chmod 755 "${OUT_DIR}/netguard/alcyone-netguard"
+    report "${OUT_DIR}/netguard/alcyone-netguard"
+}
+
 main() {
     command -v git >/dev/null 2>&1 || die "git not found"
     mkdir -p -- "${BUILD_ROOT}/src" "${OUT_DIR}"
@@ -161,11 +178,12 @@ main() {
         log "xray ${XRAY_TAG}; tun2socks ${TUN2SOCKS_TAG}; sing-box ${SINGBOX_TAG}"
     fi
     case "${target}" in
-        all) build_xray; build_tun2socks; build_singbox; build_launcher ;;
+        all) build_xray; build_tun2socks; build_singbox; build_launcher; build_netguard ;;
         xray) build_xray ;;
         tun2socks) build_tun2socks ;;
         sing-box) build_singbox ;;
         launcher) build_launcher ;;
+        netguard) build_netguard ;;
         *) die "unknown component: ${target}" ;;
     esac
 }

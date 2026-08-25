@@ -16,6 +16,18 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/rtnetlink.h>
+
+/* Minimal UAPI constants that some libc header sets (musl) omit. The
+   values are fixed kernel ABI: enum fib_rule_access / fib_rule_action. */
+#ifndef FRA_PRIORITY
+#define FRA_PRIORITY 6
+#endif
+#ifndef FRA_TABLE
+#define FRA_TABLE 14
+#endif
+#ifndef FR_ACT_TO_TBL
+#define FR_ACT_TO_TBL 1
+#endif
 #include <net/if.h>
 #include <arpa/inet.h>
 #include <signal.h>
@@ -210,18 +222,29 @@ static int nl_talk(int fd, struct nlmsghdr *nh) {
 }
 
 static int del_rule(int fd, int family, int pref, int table) {
-  char buf[NLMSG_ALIGN(sizeof(struct nlmsghdr)) +
-           NLMSG_ALIGN(sizeof(struct fib_rule_hdr)) + 128];
+  /* Some libc/UAPI header sets (musl) leave struct fib_rule_hdr
+     incomplete, so the fixed 12-byte rule header is assembled by hand.
+     Layout is kernel ABI, stable since 2.6.x, little-endian targets:
+     [0]family [1]dst_len [2]src_len [3]tos [4:8]table [8]res1 [9]res2
+     [10]action [11]flags. */
+  char buf[NLMSG_ALIGN(sizeof(struct nlmsghdr)) + NLA_ALIGN(12) + 128];
   struct nlmsghdr *nh = (struct nlmsghdr *)buf;
-  struct fib_rule_hdr *frh;
+  unsigned char *frh;
   struct rtattr *rta;
   memset(buf, 0, sizeof(buf));
   nh->nlmsg_type = RTM_DELRULE;
   nh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-  frh = (struct fib_rule_hdr *)NLMSG_DATA(nh);
-  frh->family = (unsigned char)family;
-  frh->action = FR_ACT_TO_TBL;
-  nh->nlmsg_len = NLMSG_LENGTH(sizeof(*frh));
+  frh = (unsigned char *)NLMSG_DATA(nh);
+  frh[0] = (unsigned char)family;
+  frh[1] = 0; /* dst_len */
+  frh[2] = 0; /* src_len */
+  frh[3] = 0; /* tos */
+  memcpy(frh + 4, &table, 4);
+  frh[8] = 0;                 /* res1 */
+  frh[9] = 0;                 /* res2 */
+  frh[10] = FR_ACT_TO_TBL;    /* action */
+  frh[11] = 0;                /* flags */
+  nh->nlmsg_len = NLMSG_LENGTH(12);
   if (pref > 0) {
     rta = (struct rtattr *)((char *)nh + NLMSG_ALIGN(nh->nlmsg_len));
     rta->rta_type = FRA_PRIORITY;
@@ -361,7 +384,7 @@ static void fail_open(const struct lease *lease, const char *lease_path) {
     record(&rep, "del_rule_v6=%s", rc ? "errno" : "ok");
   }
   for (i = 0; i < lease->n_routes; i++) {
-    struct route_entry *re = &lease->routes[i];
+    const struct route_entry *re = &lease->routes[i];
     int rc;
     if (AF_INET == re->family && oif > 0)
       rc = del_route(fd, re, oif);

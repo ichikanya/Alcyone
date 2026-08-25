@@ -9,6 +9,8 @@ var crypto = require("crypto"),
   PINNED_SHA256 = {
     "alcyone-exec":
       "cd7858b1e94df2daa3765f9851d1b9299f5e46a4d5a528940d76ea1b708a2005",
+    "alcyone-netguard":
+      "765d24c6645706dd6d2b5df6fedfe3e886e4fc6605916da3bb3fe6227e9ba08f",
     xray: "451bfccf7c86f08860296903479d8b92edccc507312b3eb338de33a7cb3dabfb",
     tun2socks:
       "b2bbe63f8144ce67a9f8839541428999302b68cd54fbf14f403c73be75cd719a",
