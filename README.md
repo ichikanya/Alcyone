@@ -89,7 +89,7 @@ GitHub Actions runs the same checks, builds each edition in a separate matrix jo
 
 - The XRay edition is the in-place upgrade path for existing Alcyone installations and preserves `/var/lib/alcyone`.
 - The sing-box edition uses its own app ID, storage, port 8081, and autostart entry. On first install it can seed its profile store from XRay without sharing later changes.
-- Both editions may be installed together. A cross-edition lock enforces that only one owns the TV-wide `tun0` route at a time; the second edition refuses to connect while the first holds it.
+- Both editions may be installed together. A cross-edition lock enforces that only one owns the VPN diversion at a time; the second edition refuses to connect while the first holds it. Each edition uses its own TUN device (`alx0` for XRay, `als0` for sing-box), so neither can tear down the other's interface.
 - XHTTP and full XRay routing/balancer semantics remain XRay-only; sing-box rejects XHTTP before startup.
 - After turning on the TV, wait for its network connection before starting VPN. Disabling Quick Start is recommended for predictable autostart.
 

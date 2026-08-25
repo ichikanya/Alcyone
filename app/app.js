@@ -407,7 +407,7 @@
       "err.ENDPOINT_RESOLUTION_FAILED":
         "Не удалось разрешить адрес выбранного VPN-сервера",
       "err.ENDPOINT_UNREACHABLE": "Выбранный VPN-сервер недоступен",
-      "err.TUN_NOT_READY": "Интерфейс tun0 не был создан",
+      "err.TUN_NOT_READY": "TUN-интерфейс не был создан",
       "err.ROUTE_FAILED": "Не удалось настроить маршруты",
       "err.HEALTH_CHECK_FAILED": "Маршрут через туннель не активен",
       "err.NETWORK_CHANGED":
@@ -689,7 +689,7 @@
       "err.ENDPOINT_RESOLUTION_FAILED":
         "Could not resolve the selected VPN server",
       "err.ENDPOINT_UNREACHABLE": "The selected VPN server is unreachable",
-      "err.TUN_NOT_READY": "The tun0 interface was not created",
+      "err.TUN_NOT_READY": "The TUN interface was not created",
       "err.ROUTE_FAILED": "Could not configure routes",
       "err.HEALTH_CHECK_FAILED": "The tunnel route is not active",
       "err.NETWORK_CHANGED":

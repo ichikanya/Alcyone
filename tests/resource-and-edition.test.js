@@ -256,19 +256,19 @@ function issuedMatching(predicate) {
 record(
   "teardown removes every route attached to the TUN device",
   issuedMatching(function (a) {
-    return a[0] === "route" && a[1] === "flush" && a.indexOf("tun0") >= 0;
+    return a[0] === "route" && a[1] === "flush" && a.indexOf("alx0") >= 0;
   }),
 );
 record(
   "teardown removes stale TUN addresses",
   issuedMatching(function (a) {
-    return a[0] === "addr" && a[1] === "flush" && a.indexOf("tun0") >= 0;
+    return a[0] === "addr" && a[1] === "flush" && a.indexOf("alx0") >= 0;
   }),
 );
 record(
   "teardown removes a persistent TUN device",
   issuedMatching(function (a) {
-    return a[0] === "link" && a[1] === "delete" && a.indexOf("tun0") >= 0;
+    return a[0] === "link" && a[1] === "delete" && a.indexOf("alx0") >= 0;
   }),
 );
 record(

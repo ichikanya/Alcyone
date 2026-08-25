@@ -172,9 +172,13 @@ function VpnManager(e) {
     routes: this.routes,
     probe: this.livenessProbe,
     logger: this.logger,
+    tunStatsDir:
+      "/sys/class/net/" +
+      routesLib.tunNameFor(this.edition.core) +
+      "/statistics",
     physicalAvailable: function () {
       var route = t.routes.readDefaultRoute();
-      return !!(route && route.device && route.device !== routesLib.TUN_NAME);
+      return !!(route && route.device && route.device !== t.routes.tunName);
     },
     onIncident: function (code, detail) { t.failSafe(code, detail); },
   });
@@ -1147,7 +1151,7 @@ function VpnManager(e) {
                       if (
                         !u("tun2socks", e.tun2socks, [
                           "-tunName",
-                          routesLib.TUN_NAME,
+                          routesLib.tunNameFor(i.edition.core),
                           "-tunAddr",
                           routesLib.TUN_IP,
                           "-tunGw",

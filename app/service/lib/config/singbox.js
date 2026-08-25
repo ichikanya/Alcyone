@@ -2,7 +2,9 @@
 var parsers = require("../proto/parsers"),
   errors = require("../errors"),
   err = errors.err,
-  TUN_INTERFACE = "tun0",
+  /* Edition-specific interface: the sing-box edition owns als0, so it can
+     never collide with (or be destroyed by) the XRay edition's alx0. */
+  TUN_INTERFACE = "als0",
   TUN_ADDRESS = "198.18.0.1/30",
   TUN_MTU = 1500,
   SOCKS_PORT = 10801,

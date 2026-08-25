@@ -126,7 +126,7 @@ record(
     }),
 );
 record(
-  "XRay direct IPv4 ranges bypass tun0 on the physical interface",
+  "XRay direct IPv4 ranges bypass alx0 on the physical interface",
   hasCommand([
     "route",
     "replace",
@@ -141,7 +141,7 @@ record(
     hasCommand(["route", "replace", "240.0.0.0/4", "dev", "wlan0"]),
 );
 record(
-  "every direct-range route is verified off tun0 after split-route install",
+  "every direct-range route is verified off alx0 after split-route install",
   routesLib.DIRECT_BYPASS_ROUTES.every(function (route) {
     return route.probe
       ? hasCommand(["route", "get", route.probe])

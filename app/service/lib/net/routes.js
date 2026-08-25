@@ -9,6 +9,7 @@ var childProcess = require("child_process"),
   err = errors.err,
   IP_CANDIDATES = ["/sbin/ip", "/usr/sbin/ip", "/bin/ip", "/usr/bin/ip"],
   TUN_NAME = "tun0",
+  TUN_NAMES = { xray: "alx0", "sing-box": "als0" },
   TUN_IP = "198.18.0.1",
   TUN_GW = "198.18.0.2",
   TUN_MASK = "30",
@@ -27,6 +28,12 @@ var childProcess = require("child_process"),
 function findIpBinary() {
   return require("../supervisor").resolveExecutable(IP_CANDIDATES);
 }
+/* Edition-specific TUN interface names: one edition must never be able
+   to tear down the other edition's device, so the shared "tun0" is gone.
+   tunNameFor keeps a mapping for callers that only know the core id. */
+function tunNameFor(e) {
+  return TUN_NAMES[e] || TUN_NAME;
+}
 function RouteManager(e) {
   ((e = e || {}),
     (this.logger = e.logger),
@@ -34,6 +41,7 @@ function RouteManager(e) {
     (this.stateFile = e.stateFile),
     (this.ipBinary = e.ipBinary || findIpBinary()),
     (this.procRouteFile = e.procRouteFile || "/proc/net/route"),
+    (this.tunName = e.tunName || tunNameFor(this.core)),
     (this.applied = !1));
   this.guardian =
     e.guardian ||
@@ -51,7 +59,7 @@ function RouteManager(e) {
     persist: this.persistState.bind(this),
     logger: this.logger,
     core: this.core,
-    tunName: TUN_NAME,
+    tunName: this.tunName,
     tunIp: TUN_IP,
     tunGw: TUN_GW,
   });
@@ -97,7 +105,7 @@ function decodeProcIpv4(e) {
     if (!e) return !0;
     t = {
       edition: this.core,
-      tunIf: TUN_NAME,
+      tunIf: this.tunName,
       v6Block: IPV6_BLOCK_ROUTES.slice(),
       splitV4:
         "policy" === e.routingBackend && e.policy ? [] : SPLIT_ROUTES.slice(),
@@ -139,7 +147,7 @@ function decodeProcIpv4(e) {
     for (e = 0; e < o.length; e++)
       if (
         (t = o[e]) &&
-        !(t.indexOf(TUN_NAME) >= 0) &&
+        !(t.indexOf(this.tunName) >= 0) &&
         ((r = /\bvia\s+(\S+)/.exec(t)), (i = /\bdev\s+(\S+)/.exec(t)))
       )
         return { gateway: r ? r[1] : "", device: i[1], raw: t.trim() };
@@ -162,7 +170,7 @@ function decodeProcIpv4(e) {
     for (t = e.split("\n"), r = 1; r < t.length; r++)
       if (!(
         (i = t[r].trim().split(/\s+/)).length < 8 ||
-        i[0] === TUN_NAME ||
+        i[0] === this.tunName ||
         "00000000" !== i[1] ||
         "00000000" !== i[7] ||
         0 == (1 & parseInt(i[3], 16))
@@ -182,7 +190,7 @@ function decodeProcIpv4(e) {
       r,
       i = this.ip(["route", "show", "exact", e]).stdout.split("\n");
     for (t = 0; t < i.length; t++)
-      if ((r = i[t].trim()) && r.indexOf(TUN_NAME) < 0) return r;
+      if ((r = i[t].trim()) && r.indexOf(this.tunName) < 0) return r;
     return "";
   }),
   (RouteManager.prototype.readIpv4Route = function (e) {
@@ -245,7 +253,7 @@ function decodeProcIpv4(e) {
     return atomic.readJson(this.stateFile, null);
   }),
   (RouteManager.prototype.tunExists = function () {
-    return 0 === this.ip(["link", "show", TUN_NAME]).code;
+    return 0 === this.ip(["link", "show", this.tunName]).code;
   }),
   (RouteManager.prototype.addServerBypass = function (e, t) {
     e &&
@@ -291,18 +299,27 @@ function decodeProcIpv4(e) {
       r,
       i,
       o,
-      a = e && e.original;
+      a = e && e.original,
+      /* Policy backend installs direct prefixes into its OWN vendor table;
+         verifying them against main was the false-negative that killed
+         healthy policy sessions. Exact-show checks become table-aware. */
+      n =
+        e && "policy" === e.routingBackend && e.policy && e.policy.table
+          ? String(e.policy.table)
+          : "";
     if (!a || !a.device) return !1;
     for (t = 0; t < DIRECT_BYPASS_ROUTES.length; t++)
       if (
         ((r = (o = DIRECT_BYPASS_ROUTES[t]).probe
           ? this.ip(["route", "get", o.probe])
-          : this.ip(["route", "show", "exact", o.prefix])),
+          : n
+            ? this.ip(["route", "show", "table", n, "exact", o.prefix])
+            : this.ip(["route", "show", "exact", o.prefix])),
         (i = /\bdev\s+(\S+)/.exec(r.stdout)),
         0 !== r.code ||
           !i ||
           i[1] !== a.device ||
-          r.stdout.indexOf(TUN_NAME) >= 0 ||
+          r.stdout.indexOf(this.tunName) >= 0 ||
           r.stdout.indexOf(TUN_GW) >= 0)
       )
         return (
@@ -310,6 +327,7 @@ function decodeProcIpv4(e) {
             this.logger.warn("direct route verification failed", {
               prefix: o.prefix,
               status: r.code,
+              table: n || "main",
             }),
           !1
         );
@@ -355,7 +373,7 @@ function decodeProcIpv4(e) {
       ]);
     for (
       "sing-box" === this.core
-        ? this.ip(["addr", "add", TUN_IP + "/" + TUN_MASK, "dev", TUN_NAME])
+        ? this.ip(["addr", "add", TUN_IP + "/" + TUN_MASK, "dev", this.tunName])
         : this.ip([
             "addr",
             "add",
@@ -363,9 +381,9 @@ function decodeProcIpv4(e) {
             "peer",
             TUN_GW,
             "dev",
-            TUN_NAME,
+            this.tunName,
           ]),
-        this.ip(["link", "set", TUN_NAME, "up"]),
+        this.ip(["link", "set", this.tunName, "up"]),
         t = 0;
       t < i.length;
       t++
@@ -373,7 +391,7 @@ function decodeProcIpv4(e) {
       this.addServerBypass(i[t], r);
     for (this.installDirectBypasses(e), t = 0; t < SPLIT_ROUTES.length; t++)
       "sing-box" === this.core
-        ? this.ip(["route", "replace", SPLIT_ROUTES[t], "dev", TUN_NAME])
+        ? this.ip(["route", "replace", SPLIT_ROUTES[t], "dev", this.tunName])
         : this.ip([
             "route",
             "replace",
@@ -381,7 +399,7 @@ function decodeProcIpv4(e) {
             "via",
             TUN_GW,
             "dev",
-            TUN_NAME,
+            this.tunName,
           ]);
     if ((this.ip(["route", "flush", "cache"]), !this.directRoutesActive(e)))
       throw err("ROUTE_FAILED", "direct routes captured by tunnel");
@@ -405,7 +423,7 @@ function decodeProcIpv4(e) {
     for (e = 0; e < r.length; e++)
       if (
         0 === (t = this.ip(["route", "get", r[e]])).code &&
-        (t.stdout.indexOf(TUN_NAME) >= 0 || t.stdout.indexOf(TUN_GW) >= 0)
+        (t.stdout.indexOf(this.tunName) >= 0 || t.stdout.indexOf(TUN_GW) >= 0)
       )
         return !0;
     return !1;
@@ -413,9 +431,9 @@ function decodeProcIpv4(e) {
   (RouteManager.prototype.physicalRestored = function () {
     var physical = this.readDefaultRoute();
     var publicRoute = this.ip(["route", "get", "9.9.9.9"]);
-    return !!(physical && physical.device && physical.device !== TUN_NAME) &&
+    return !!(physical && physical.device && physical.device !== this.tunName) &&
       publicRoute.code === 0 &&
-      publicRoute.stdout.indexOf(TUN_NAME) < 0 &&
+      publicRoute.stdout.indexOf(this.tunName) < 0 &&
       publicRoute.stdout.indexOf(TUN_GW) < 0;
   }),
   (RouteManager.prototype.rollback = function (e) {
@@ -429,6 +447,16 @@ function decodeProcIpv4(e) {
       n = i && i.directRoutes,
       u = (i && i.ipv6Routes) || {};
     if (!this.available()) return !1;
+    /* Ownership guard: with no recorded state of our own there is nothing
+       this edition may delete. Blindly removing generic split routes or
+       interfaces here is what let an idle edition destroy a foreign
+       tunnel; recovery of OUR stale state always has a state file. */
+    if (!i && !e.force)
+      return (
+        this.logger &&
+          this.logger.warn("rollback skipped: no owned route state"),
+        this.physicalRestored()
+      );
     if (i && i.policy) this.policy.rollback(i);
     for (t = 0; t < SPLIT_ROUTES.length; t++)
       this.ip(["route", "del", SPLIT_ROUTES[t]]);
@@ -461,10 +489,10 @@ function decodeProcIpv4(e) {
               ["route", "replace"].concat(String(n[r.prefix]).split(/\s+/)),
             ));
     return (
-      this.ip(["route", "flush", "dev", TUN_NAME]),
-      this.ip(["link", "set", TUN_NAME, "down"]),
-      this.ip(["addr", "flush", "dev", TUN_NAME]),
-      this.ip(["link", "delete", TUN_NAME]),
+      this.ip(["route", "flush", "dev", this.tunName]),
+      this.ip(["link", "set", this.tunName, "down"]),
+      this.ip(["addr", "flush", "dev", this.tunName]),
+      this.ip(["link", "delete", this.tunName]),
       !e.preserveCurrentNetwork &&
         o &&
         o.device &&
@@ -510,11 +538,13 @@ function decodeProcIpv4(e) {
         !!(e && e.routingBackend === "policy" && e.policy && e.policy.ipv6RuleApplied) ||
         this.ip(["-6", "route", "show", IPV6_BLOCK_ROUTES[0]]).stdout.indexOf("unreachable") >= 0,
       publicRouteUsesTun:
-        t.stdout.indexOf(TUN_NAME) >= 0 || t.stdout.indexOf(TUN_GW) >= 0,
+        t.stdout.indexOf(this.tunName) >= 0 || t.stdout.indexOf(TUN_GW) >= 0,
     };
   }),
   (module.exports = {
     TUN_NAME: TUN_NAME,
+    TUN_NAMES: TUN_NAMES,
+    tunNameFor: tunNameFor,
     TUN_IP: TUN_IP,
     TUN_GW: TUN_GW,
     TUN_MASK: TUN_MASK,
