@@ -86,7 +86,7 @@ function readPid(t) {
       a = path.join(this.paths.appDir, "bin"),
       p = path.join(this.paths.dataDir, "bin"),
       l =
-        "sing-box" === this.edition.core ? ["sing-box"] : ["xray", "tun2socks"],
+        "sing-box" === this.edition.core ? ["sing-box"] : ["xray", "tun2socks", "alcyone-netguard"],
       c = [];
     for (t = 0; t < l.length; t++)
       if (
@@ -389,7 +389,7 @@ function readPid(t) {
       i,
       r,
       s =
-        "sing-box" === this.edition.core ? ["sing-box"] : ["xray", "tun2socks"],
+        "sing-box" === this.edition.core ? ["sing-box"] : ["xray", "tun2socks", "alcyone-netguard"],
       o = {},
       n = [];
     for (e = 0; e < s.length; e++)

@@ -70,6 +70,7 @@ function GuardianClient(r) {
     r.heartbeatFile || (this.leaseFile ? this.leaseFile + ".beat" : "");
   this.firedFile = this.leaseFile ? this.leaseFile + ".fired" : "";
   this.binaryPath = r.binaryPath || "";
+  this.flagFile = r.flagFile || "";
   if (!this.binaryPath && !r.spawnImpl)
     this.binaryPath = findBinary(
       GUARDIAN_CANDIDATES.concat(
@@ -82,7 +83,8 @@ function GuardianClient(r) {
     );
   this.enabled = void 0 !== r.enabled
     ? !!r.enabled
-    : "1" === process.env.ALCYONE_NETGUARD;
+    : "1" === process.env.ALCYONE_NETGUARD ||
+      !!(this.flagFile && atomic.pathExists(this.flagFile));
   this.intervalMs = r.intervalMs || HEARTBEAT_INTERVAL_MS;
   this.leaseMs = r.leaseMs || LEASE_MS;
   this.ackTimeoutMs = r.ackTimeoutMs || ACK_TIMEOUT_MS;

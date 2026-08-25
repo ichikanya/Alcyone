@@ -148,6 +148,8 @@ function VpnManager(e) {
       logger: this.logger,
       core: this.edition.core,
       stateFile: this.paths.routeState,
+      netguardFlagFile: this.paths.dataDir + "/netguard.enabled",
+      netguardDirs: [this.paths.dataDir + "/bin"],
     })),
     (this.systemProxy.routes = this.routes),
     (this.recoveryBudget =

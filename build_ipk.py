@@ -53,6 +53,7 @@ EDITIONS = {
             "bin/alcyone-exec": os.path.join(CORES, "launcher", "alcyone-exec"),
             "bin/xray": os.path.join(CORES, "xray", "xray"),
             "bin/tun2socks": os.path.join(CORES, "tun2socks", "tun2socks"),
+            "bin/alcyone-netguard": os.path.join(CORES, "netguard", "alcyone-netguard"),
         },
         "assets": {
             "bin/geosite.dat": os.path.join(CORES, "xray", "geosite.dat"),
@@ -79,6 +80,9 @@ EDITIONS = {
         "assets": {},
     },
 }
+
+
+DATA_PLANE = "tun2socks"
 
 
 def read(path):
@@ -161,6 +165,7 @@ def edition_js(edition):
         "editionName": edition["edition_name"],
         "title": edition["title"],
         "version": VERSION,
+        "dataPlane": DATA_PLANE,
     }
     return ("window.ALCYONE_EDITION = " + json.dumps(config, ensure_ascii=False, separators=(",", ":")) + ";\n").encode("utf-8")
 
@@ -178,6 +183,7 @@ def edition_json(edition):
         "dataDir": edition["data_dir"],
         "autostartName": edition["autostart"],
         "webPort": edition["web_port"],
+        "dataPlane": DATA_PLANE,
     })
 
 
@@ -371,6 +377,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--edition", choices=("all", "xray", "sing-box"), default="all")
     parser.add_argument(
+        "--data-plane",
+        choices=("tun2socks", "native-tun"),
+        default="tun2socks",
+        help="XRay data plane baked into the edition descriptor",
+    )
+    parser.add_argument(
         "--output-dir",
         # Shipping artifacts live in release-assets/ and are pinned by the
         # feed metadata; local builds must not overwrite them by accident
@@ -429,7 +441,9 @@ def write_artifacts_manifest(output_dir, names, label):
 
 
 def main():
+    global DATA_PLANE
     args = parse_args()
+    DATA_PLANE = args.data_plane
     executable = find_ares_package(args.ares_package)
     label = re.sub(r"[^A-Za-z0-9._-]", "", args.label)
     names = ("xray", "sing-box") if args.edition == "all" else (args.edition,)

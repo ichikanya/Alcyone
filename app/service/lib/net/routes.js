@@ -53,6 +53,8 @@ function RouteManager(e) {
             path.dirname(e.stateFile),
             "netguard-" + this.core + ".lease",
           ),
+          flagFile: e.netguardFlagFile,
+          searchDirs: e.netguardDirs,
         })
       : null);
   this.policy = new policyLib.PolicyRoutes({
