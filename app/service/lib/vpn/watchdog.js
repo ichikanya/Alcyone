@@ -3,6 +3,7 @@
 var fs = require("fs");
 var path = require("path");
 var TICK_MS = 15000;
+var CONNECT_GRACE_MS = 90000;
 var IDLE_PROBE_MS = 30000;
 var RSS_WARMUP_MS = 10 * 60 * 1000;
 var RSS_WINDOW_MS = 30 * 60 * 1000;
@@ -124,6 +125,14 @@ Watchdog.prototype.processMetrics = function () {
 
 Watchdog.prototype.openIncident = function (code, detail) {
   if (this.incidentOpen) return;
+  /* Post-connect ramp-up window: FD counts and probes legitimately wobble
+     while the core warms up (observed EMFILE storm starting ~25s in).
+     During the grace period an incident degrades to a visible warning so
+     the user sees pressure without a disconnect loop. */
+  if (this.now() < this.graceUntil && "RESOURCE_PRESSURE" !== code) {
+    this.snapshot.warning = code + "_GRACE";
+    return;
+  }
   this.incidentOpen = true;
   this.snapshot.state = "incident";
   this.snapshot.lastErrorCode = code;
@@ -235,6 +244,7 @@ Watchdog.prototype.tick = function () {
 Watchdog.prototype.start = function () {
   if (this.timer) return;
   this.startedAt = this.now();
+  this.graceUntil = this.startedAt + CONNECT_GRACE_MS;
   this.lastProbeOkAt = 0;
   this.lastCounters = null;
   this.failedProbes = 0;

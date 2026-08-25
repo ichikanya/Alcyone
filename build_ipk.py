@@ -82,7 +82,7 @@ EDITIONS = {
 }
 
 
-DATA_PLANE = "tun2socks"
+DATA_PLANE = "native-tun"
 
 
 def read(path):
@@ -379,7 +379,7 @@ def parse_args():
     parser.add_argument(
         "--data-plane",
         choices=("tun2socks", "native-tun"),
-        default="tun2socks",
+        default="native-tun",
         help="XRay data plane baked into the edition descriptor",
     )
     parser.add_argument(
