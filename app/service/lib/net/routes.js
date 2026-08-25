@@ -1,7 +1,9 @@
 "use strict";
 var childProcess = require("child_process"),
   fs = require("fs"),
+  path = require("path"),
   atomic = require("../atomic"),
+  guardianLib = require("./guardian-client"),
   policyLib = require("./policy-routes"),
   errors = require("../errors"),
   err = errors.err,
@@ -33,6 +35,17 @@ function RouteManager(e) {
     (this.ipBinary = e.ipBinary || findIpBinary()),
     (this.procRouteFile = e.procRouteFile || "/proc/net/route"),
     (this.applied = !1));
+  this.guardian =
+    e.guardian ||
+    (e.stateFile
+      ? new guardianLib.GuardianClient({
+          logger: this.logger,
+          leaseFile: path.join(
+            path.dirname(e.stateFile),
+            "netguard-" + this.core + ".lease",
+          ),
+        })
+      : null);
   this.policy = new policyLib.PolicyRoutes({
     ip: this.ip.bind(this),
     persist: this.persistState.bind(this),
@@ -77,6 +90,45 @@ function decodeProcIpv4(e) {
   }),
   (RouteManager.prototype.available = function () {
     return !!this.ipBinary;
+  }),
+  (RouteManager.prototype.armGuardian = function (e) {
+    var t;
+    if (!this.guardian || !this.guardian.enabled) return !0;
+    if (!e) return !0;
+    t = {
+      edition: this.core,
+      tunIf: TUN_NAME,
+      v6Block: IPV6_BLOCK_ROUTES.slice(),
+      splitV4:
+        "policy" === e.routingBackend && e.policy ? [] : SPLIT_ROUTES.slice(),
+    };
+    "policy" === e.routingBackend &&
+      e.policy &&
+      e.policy.table &&
+      ((t.rulePref = e.policy.tunnelPriority),
+      (t.ruleTable = e.policy.table),
+      (t.v6Rule = !!e.policy.ipv6RuleApplied));
+    /* Rearm is a full disarm+arm: the C guardian reads its lease once. */
+    this.guardian.status().armed && this.guardian.disarm();
+    /* When the netguard feature is enabled, a failed arm ABORTS the
+       takeover: connecting without an independent fail-open is exactly
+       the failure mode this stage exists to remove. */
+    try {
+      this.guardian.arm(t);
+    } catch (armError) {
+      throw err(
+        "GUARDIAN_UNAVAILABLE",
+        armError && armError.code ? armError.code : "arm failed",
+      );
+    }
+    return !0;
+  }),
+  (RouteManager.prototype.disarmGuardian = function () {
+    return (
+      !this.guardian ||
+      !this.guardian.enabled ||
+      (this.guardian.stopHeartbeat(), !0)
+    );
   }),
   (RouteManager.prototype.readDefaultRoute = function () {
     var e,
@@ -268,6 +320,8 @@ function decodeProcIpv4(e) {
       r = e && e.original,
       i = (e && e.serverAddresses) || [];
     if (!this.available()) throw err("ROUTE_FAILED", "ip binary unavailable");
+    /* Arm the independent fail-open BEFORE any network object exists. */
+    this.armGuardian(e);
     if (e && e.routingBackend === "policy" && e.policy) {
       try {
         this.policy.apply(e);
@@ -283,6 +337,8 @@ function decodeProcIpv4(e) {
           this.logger.warn("policy routing transaction rolled back", {
             code: policyError.code || "ROUTE_FAILED",
           });
+        /* Backend changed: rearm with the legacy object set. */
+        this.armGuardian(e);
       }
     }
     for (t = 0; t < SPLIT_ROUTES.length; t++)
@@ -428,7 +484,14 @@ function decodeProcIpv4(e) {
       (this.applied = !1),
       this.physicalRestored() && atomic.removeQuiet(this.stateFile),
       this.logger && this.logger.info("routes rolled back"),
+      /* Disarm only after the physical path is verified: if rollback
+         failed, the guardian stays armed and will fail-open on expiry. */
       this.physicalRestored()
+        ? (this.guardian && this.guardian.enabled && this.guardian.disarm(),
+          !0)
+        : (this.logger &&
+            this.logger.warn("physical route not restored, netguard stays armed"),
+          !1)
     );
   }),
   (RouteManager.prototype.diagnostics = function () {

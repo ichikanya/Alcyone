@@ -209,6 +209,23 @@ function fileRevision(r) {
     return "missing";
   }
 }
+/* Best-effort directory fsync so a rename survives power loss on Linux.
+   Directory fds do not exist on some platforms; failures are ignored. */
+function fsyncDir(r) {
+  var t;
+  try {
+    t = fs.openSync(r, "r");
+  } catch (e) {
+    return !1;
+  }
+  try {
+    fs.fsyncSync(t);
+  } catch (e) {}
+  try {
+    fs.closeSync(t);
+  } catch (e) {}
+  return !0;
+}
 module.exports = {
   DIR_MODE: DIR_MODE,
   SHARED_DIR_MODE: SHARED_DIR_MODE,
@@ -226,4 +243,5 @@ module.exports = {
   readTextSafe: readTextSafe,
   removeQuiet: removeQuiet,
   fileRevision: fileRevision,
+  fsyncDir: fsyncDir,
 };
