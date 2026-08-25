@@ -413,45 +413,80 @@ function buildTun(t, e, r) {
   return (
     (r = r || {}),
     t.fullConfig
-      ? buildFullConfig(t.fullConfig, e, r)
-      : applyBootstrap(
-          applyDns(
-            applyResourcePolicy({
-              log: { loglevel: "warning" },
-              inbounds: [
-                {
-                  tag: "socks-in",
-                  listen: "127.0.0.1",
-                  port: SOCKS_PORT,
-                  protocol: "socks",
-                  settings: { auth: "noauth", udp: !0 },
-                  sniffing: {
-                    enabled: !0,
-                    destOverride: ["http", "tls", "quic"],
-                  },
-                },
-              ],
-              outbounds: [
-                outboundFor(t),
-                { protocol: "freedom", tag: "direct" },
-                { protocol: "blackhole", tag: "block" },
-              ],
-              routing: {
-                domainStrategy: "AsIs",
-                rules: [
+      ? withNativeTun(
+          r,
+          buildFullConfig(t.fullConfig, e, r),
+        )
+      : withNativeTun(
+          r,
+          applyBootstrap(
+            applyDns(
+              applyResourcePolicy({
+                log: { loglevel: "warning" },
+                inbounds: [
                   {
-                    type: "field",
-                    ip: PRIVATE_RANGES.slice(0),
-                    outboundTag: "direct",
+                    tag: "socks-in",
+                    listen: "127.0.0.1",
+                    port: SOCKS_PORT,
+                    protocol: "socks",
+                    settings: { auth: "noauth", udp: !0 },
+                    sniffing: {
+                      enabled: !0,
+                      destOverride: ["http", "tls", "quic"],
+                    },
                   },
                 ],
-              },
-            }),
-            r.dnsServer,
+                outbounds: [
+                  outboundFor(t),
+                  { protocol: "freedom", tag: "direct" },
+                  { protocol: "blackhole", tag: "block" },
+                ],
+                routing: {
+                  domainStrategy: "AsIs",
+                  rules: [
+                    {
+                      type: "field",
+                      ip: PRIVATE_RANGES.slice(0),
+                      outboundTag: "direct",
+                    },
+                  ],
+                },
+              }),
+              r.dnsServer,
+            ),
+            e,
           ),
-          e,
         )
   );
+}
+/* Native TUN data plane (single-process XRay): prepends a tun inbound so
+   XRay owns the device itself and go-tun2socks is not started. The loopback
+   SOCKS inbound stays for health probes. The inbound shape is isolated
+   here; edition configs may override it wholesale via tunInboundOverride
+   while the on-device spike settles exact upstream field names. */
+function nativeTunInbound(r) {
+  return r && r.tunInboundOverride
+    ? JSON.parse(JSON.stringify(r.tunInboundOverride))
+    : {
+        tag: "tun-in",
+        protocol: "tun",
+        settings: {
+          name: (r && r.interfaceName) || "alx0",
+          mtu: (r && r.mtu) || 1400,
+        },
+        sniffing: { enabled: !0, destOverride: ["http", "tls", "quic"] },
+      };
+}
+function withNativeTun(r, e) {
+  return "native-tun" === (r && r.dataPlane)
+    ? ((e.inbounds = [nativeTunInbound(r)].concat(e.inbounds)), e)
+    : e;
+}
+/* Data plane selection belongs to the edition config, not to probing:
+   flipping modes is an explicit release decision backed by hardware
+   qualification, never an automatic fallback. */
+function dataPlaneFor(e) {
+  return e && "native-tun" === e.dataPlane ? "native-tun" : "tun2socks";
 }
 function build(t, e, r) {
   return "systemProxy" === (r = r || {}).mode
@@ -539,4 +574,6 @@ module.exports = {
   applyDns: applyDns,
   applyBootstrap: applyBootstrap,
   endpoints: endpoints,
+  nativeTunInbound: nativeTunInbound,
+  dataPlaneFor: dataPlaneFor,
 };

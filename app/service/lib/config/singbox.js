@@ -5,6 +5,7 @@ var parsers = require("../proto/parsers"),
   /* Edition-specific interface: the sing-box edition owns als0, so it can
      never collide with (or be destroyed by) the XRay edition's alx0. */
   TUN_INTERFACE = "als0",
+  mtuPolicy = require("../mtu-policy").mtuPolicy,
   TUN_ADDRESS = "198.18.0.1/30",
   TUN_MTU = 1500,
   SOCKS_PORT = 10801,
@@ -244,9 +245,9 @@ function buildTun(t, r, e) {
             {
               type: "tun",
               tag: "tun-in",
-              interface_name: TUN_INTERFACE,
+              interface_name: e.interfaceName || TUN_INTERFACE,
               address: [TUN_ADDRESS],
-              mtu: TUN_MTU,
+              mtu: e.mtu || mtuPolicy(),
               auto_route: !1,
               stack: "system",
               udp_timeout: "30s",

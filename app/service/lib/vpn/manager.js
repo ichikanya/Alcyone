@@ -738,7 +738,10 @@ function VpnManager(e) {
               return n.finish(err("CORE_MISSING", "sing-box binary missing"));
             if (
               "sing-box" !== o.edition.core &&
-              (!r.xray || ("tun" === n.mode && !r.tun2socks))
+              (!r.xray ||
+                ("tun" === n.mode &&
+                  !r.tun2socks &&
+                  "tun2socks" === xrayConfig.dataPlaneFor(o.edition)))
             )
               return n.finish(err("CORE_MISSING", "VPN core binary missing"));
             if ("systemProxy" === n.mode)
@@ -854,13 +857,23 @@ function VpnManager(e) {
     }
     if (s.isCurrentOperation(i)) {
       try {
+        var dataPlaneMode = xrayConfig.dataPlaneFor(this.edition),
+          tunMtu = routesLib.mtuPolicy(this.routes.physicalMtu());
         n =
           "sing-box" === this.edition.core
             ? singboxConfig.build(e, r, {
                 dnsServer: i.dnsServer,
                 mode: i.mode,
+                interfaceName: this.routes.tunName,
+                mtu: tunMtu,
               })
-            : xrayConfig.build(e, r, { dnsServer: i.dnsServer, mode: i.mode });
+            : xrayConfig.build(e, r, {
+                dnsServer: i.dnsServer,
+                mode: i.mode,
+                dataPlane: dataPlaneMode,
+                interfaceName: this.routes.tunName,
+                mtu: tunMtu,
+              });
       } catch (e) {
         return a(
           errors.isAlcyoneError(e)
@@ -1179,6 +1192,13 @@ function VpnManager(e) {
               : "systemProxy" === t.mode
                 ? n()
                 : (function () {
+                    /* Native TUN mode: XRay creates the device itself and
+                       is the only data-plane process; go-tun2socks is not
+                       started and readiness waits for the owned device. */
+                    if (
+                      "native-tun" === xrayConfig.dataPlaneFor(i.edition)
+                    )
+                      return c(s, "xray-tun", n);
                     try {
                       if (
                         !u("tun2socks", e.tun2socks, [

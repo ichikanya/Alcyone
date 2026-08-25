@@ -4,6 +4,7 @@ var childProcess = require("child_process"),
   path = require("path"),
   atomic = require("../atomic"),
   guardianLib = require("./guardian-client"),
+  mtuPolicyLib = require("../mtu-policy"),
   policyLib = require("./policy-routes"),
   errors = require("../errors"),
   err = errors.err,
@@ -522,6 +523,15 @@ function decodeProcIpv4(e) {
           !1)
     );
   }),
+  (RouteManager.prototype.physicalMtu = function (r) {
+    /* Deliberately avoids loadState(): config building must never reread
+       the persisted snapshot behind a live connection. */
+    var e,
+      t = r || ((this.readDefaultRoute() || {}).device || "");
+    if (!t) return 0;
+    e = /(?:^|\s)mtu\s+(\d+)/i.exec(this.ip(["link", "show", t]).stdout);
+    return e ? parseInt(e[1], 10) : 0;
+  }),
   (RouteManager.prototype.diagnostics = function () {
     var e = this.loadState(),
       t = this.ip(["route", "get", "9.9.9.9"]);
@@ -545,6 +555,8 @@ function decodeProcIpv4(e) {
     TUN_NAME: TUN_NAME,
     TUN_NAMES: TUN_NAMES,
     tunNameFor: tunNameFor,
+    mtuPolicy: mtuPolicyLib.mtuPolicy,
+    MTU_POLICY: mtuPolicyLib,
     TUN_IP: TUN_IP,
     TUN_GW: TUN_GW,
     TUN_MASK: TUN_MASK,
