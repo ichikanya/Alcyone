@@ -231,7 +231,12 @@ function elfMachine(e) {
               "SHARED_DIRECTORY_REPAIR_FAILED",
               "shared directory permissions could not be repaired",
             )
-          : (t = this.checkPackage()) || (t = this.checkCores(e.mode || "tun"))
+          : "STORE_UNRECOVERABLE" === e.startupSafetyError
+            ? err(
+                "STORE_UNRECOVERABLE",
+                "profile store is corrupt; restore it from backups/profiles-*.json before connecting",
+              )
+            : (t = this.checkPackage()) || (t = this.checkCores(e.mode || "tun"))
             ? t
             : (t = this.checkAssetPresence()) || this.checkAssetIntegrity();
   }),

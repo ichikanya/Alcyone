@@ -140,14 +140,23 @@ function startup() {
       logger: logger,
     }),
     r = !0;
+  /* Network recovery runs before any data migration: after a failed or
+     interrupted upgrade the TV must get its ordinary internet back first;
+     only then may the new code touch the profile store. */
+  try {
+    vpn.recover();
+  } catch (eRec) {
+    logger.error("startup recovery failed", { detail: eRec.code || "error" });
+  }
   try {
     (e.run(), vpn.setStartupSafetyError && vpn.setStartupSafetyError(""));
   } catch (e) {
     ((r = !1),
       logger.error("startup migration failed", { detail: e.code || "error" }),
       e &&
-        "SHARED_DIRECTORY_REPAIR_FAILED" === e.code &&
         vpn.setStartupSafetyError &&
+        ("SHARED_DIRECTORY_REPAIR_FAILED" === e.code ||
+          "STORE_UNRECOVERABLE" === e.code) &&
         vpn.setStartupSafetyError(e.code));
   }
   if (r)
@@ -160,19 +169,20 @@ function startup() {
       logger.error("autostart migration failed", { detail: e.code || "error" });
     }
   try {
-    vpn.recover();
-  } catch (e) {
-    logger.error("startup recovery failed", { detail: e.code || "error" });
-  }
-  try {
     deviceInfo.getDeviceInfo && deviceInfo.getDeviceInfo(function () {});
   } catch (e) {
     logger.warn("device info probe failed", { detail: e.code || "error" });
   }
+  try {
+    store.autostartEnabled &&
+      store.autostartEnabled() &&
+      api.autostartTrigger({ source: "service-start" }, function () {});
+  } catch (e) {
+    /* A corrupt store must degrade to no autostart, never kill startup. */
+    logger.warn("autostart trigger skipped", { detail: e.code || "error" });
+  }
   (importer.listen(!1, function () {}),
     lifecycle.start(),
-    store.autostartEnabled && store.autostartEnabled() &&
-      api.autostartTrigger({ source: "service-start" }, function () {}),
     tunnelLogger.info("core log started", {
       edition: edition.id,
       version: edition.version,

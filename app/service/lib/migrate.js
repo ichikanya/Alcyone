@@ -2,17 +2,39 @@
 var fs = require("fs"),
   path = require("path"),
   atomic = require("./atomic"),
+  errors = require("./errors"),
   sharedPermissions = require("./shared-permissions"),
   storeLib = require("./store/profiles"),
   subscriptionCompat = require("./subscription-compat"),
   xrayAssets = require("./xray-assets"),
-  MIGRATION_VERSION = 10;
+  MIGRATION_VERSION = 11,
+  STORE_BACKUP_KEEP = 7;
 function fileExists(t) {
   try {
     return fs.statSync(t).isFile();
   } catch (t) {
     return !1;
   }
+}
+/* Best-effort raw byte copy used for pre-migration evidence. The backup is
+   a safety net for manual recovery, never an automatic restore source, so
+   a partial copy only costs information, never correctness. */
+function copyRawToFile(t, e) {
+  var r;
+  try {
+    r = fs.readFileSync(t);
+  } catch (t) {
+    return !1;
+  }
+  try {
+    fs.writeFileSync(e, r, { mode: atomic.FILE_MODE });
+  } catch (t) {
+    return !1;
+  }
+  try {
+    fs.chmodSync(e, atomic.FILE_MODE);
+  } catch (t) {}
+  return !0;
 }
 function Migrator(t) {
   ((t = t || {}),
@@ -149,6 +171,38 @@ function readPid(t) {
       r
     );
   }),
+  (Migrator.prototype.backupRawStore = function (t) {
+    var e,
+      i,
+      r,
+      s = path.join(this.paths.dataDir, "backups"),
+      o = String(Date.now()),
+      n = [];
+    atomic.ensureOwnedDir(s);
+    copyRawToFile(
+      this.paths.storeFile,
+      path.join(s, "profiles-" + o + "-" + t + ".json"),
+    ) && n.push("profiles");
+    copyRawToFile(
+      this.paths.storeFile + ".tmp",
+      path.join(s, "profiles-" + o + "-tmp-" + t + ".json"),
+    ) && n.push("tmp");
+    try {
+      i = fs.readdirSync(s);
+    } catch (t) {
+      i = [];
+    }
+    for (
+      r = i.filter(function (t) {
+          return /^profiles-.+\.json$/.test(t);
+        }).sort(),
+        e = 0;
+      e < r.length - STORE_BACKUP_KEEP;
+      e++
+    )
+      atomic.removeQuiet(path.join(s, r[e]));
+    return n;
+  }),
   (Migrator.prototype.migrateStore = function () {
     var t,
       e,
@@ -156,17 +210,35 @@ function readPid(t) {
         file: this.paths.storeFile,
         logger: this.logger,
       });
-    return fileExists(this.paths.storeFile)
-      ? ((t = atomic.readJson(this.paths.storeFile, null)),
-        (e = i.read()),
-        JSON.stringify(t) !== JSON.stringify(e)
-          ? (i.write(e),
-            this.logger.info("profile store normalized", {
-              profiles: e.profiles.length,
-            }),
-            { migrated: !0, profiles: e.profiles.length })
-          : { migrated: !1, profiles: e.profiles.length })
-      : { migrated: !1, profiles: 0 };
+    if (!fileExists(this.paths.storeFile)) return { migrated: !1, profiles: 0 };
+    /* Evidence first: raw canonical and temp bytes are preserved before any
+       transformation, so no migration step can make user data unrecoverable. */
+    this.backupRawStore("pre-migration");
+    if (((t = atomic.readJsonStrict(this.paths.storeFile)), !t.ok))
+      throw errors.err(
+        "STORE_UNRECOVERABLE",
+        "profile store is corrupt; upgrade blocked, raw file preserved",
+      );
+    if ("tmp" === t.source)
+      try {
+        atomic.writeFileAtomic(
+          this.paths.storeFile,
+          JSON.stringify(t.value, null, 2),
+        );
+        this.logger.warn("profile store restored from interrupted write");
+      } catch (t) {
+        throw errors.err("STORE_WRITE_FAILED", "cannot restore store from tmp");
+      }
+    return (
+      (e = i.read()),
+      JSON.stringify(t.value) !== JSON.stringify(e)
+        ? (i.write(e),
+          this.logger.info("profile store normalized", {
+            profiles: e.profiles.length,
+          }),
+          { migrated: !0, profiles: e.profiles.length })
+        : { migrated: !1, profiles: e.profiles.length }
+    );
   }),
   (Migrator.prototype.removeUnsupportedSingboxProfiles = function () {
     var t,
@@ -182,8 +254,12 @@ function readPid(t) {
       c = !1,
       h = 0;
     if (!this.edition || "sing-box" !== this.edition.core)
-      return { removed: 0, profiles: 0 };
-    if (!fileExists(this.paths.storeFile)) return { removed: 0, profiles: 0 };
+      return { marked: 0, profiles: 0 };
+    if (!fileExists(this.paths.storeFile)) return { marked: 0, profiles: 0 };
+    /* Profiles this edition cannot dial are MARKED, never deleted: the raw
+       links and full configs stay in the store so switching editions (or
+       rolling back the package) cannot lose user subscriptions. */
+    this.backupRawStore("pre-compat-mark");
     for (
       e = (t = new storeLib.ProfileStore({
         file: this.paths.storeFile,
@@ -195,37 +271,72 @@ function readPid(t) {
     ) {
       s = e.profiles[i];
       try {
-        (subscriptionCompat.assertManualSupported(this.edition, s), p.push(s));
+        subscriptionCompat.assertManualSupported(this.edition, s);
+        s.compatUnsupported &&
+          ((c = !0), delete s.compatUnsupported, delete s.compatReason);
+        p.push(s);
       } catch (t) {
         if (!subscriptionCompat.xhttpSkip(t)) {
           p.push(s);
           continue;
         }
-        ((c = !0),
+        ((n =
+          t.meta && "object" == typeof t.meta
+            ? { code: t.code, transport: String(t.meta.transport || "") }
+            : { code: t.code, transport: "" }),
+          (!s.compatUnsupported ||
+            JSON.stringify(s.compatReason || {}) !== JSON.stringify(n)) &&
+            (c = !0),
+          (s.compatUnsupported = !0),
+          (s.compatReason = n),
           h++,
           s.subscriptionId &&
             (l[s.subscriptionId] = (l[s.subscriptionId] || 0) + 1));
       }
     }
-    for (e.profiles = p, i = 0; i < e.subscriptions.length; i++) {
-      for (o = e.subscriptions[i], n = 0, r = 0; r < p.length; r++)
-        p[r].subscriptionId === o.id && n++;
+    for (i = 0; i < e.subscriptions.length; i++) {
+      for (o = e.subscriptions[i], n = 0, r = 0; r < e.profiles.length; r++)
+        e.profiles[r].subscriptionId === o.id &&
+          !e.profiles[r].compatUnsupported &&
+          n++;
       ((parseInt(o.count, 10) || 0) !== n && (c = !0),
         (o.count = n),
         l[o.id] &&
           ((o.skippedReasons = subscriptionCompat.summarizeSkipped(l[o.id])),
           (o.skippedCount = l[o.id])));
     }
-    for (a = !1, i = 0; i < p.length; i++) p[i].id === e.activeId && (a = !0);
+    function firstSupportedId() {
+      var t;
+      for (t = 0; t < p.length; t++)
+        if (!p[t].compatUnsupported) return p[t].id;
+      return null;
+    }
+    for (a = !1, i = 0; i < e.profiles.length; i++)
+      e.profiles[i].id === e.activeId &&
+        !e.profiles[i].compatUnsupported &&
+        (a = !0);
+    a || ((e.activeId = firstSupportedId()), (c = !0));
+    if (e.autostartProfileId) {
+      for (
+        n = !1, i = 0;
+        i < e.profiles.length;
+        i++
+      )
+        e.profiles[i].id === e.autostartProfileId &&
+          (n = !e.profiles[i].compatUnsupported);
+      n || ((e.autostartProfileId = null), (c = !0));
+    }
     return (
-      a || ((e.activeId = (p[0] && p[0].id) || null), (c = !0)),
       c
         ? (t.write(e),
-          this.logger.info("unsupported sing-box profiles removed", {
+          this.logger.info("unsupported sing-box profiles marked", {
+            count: h,
+          }))
+        : this.logger.info &&
+          this.logger.info("unsupported sing-box profiles checked", {
             count: h,
           }),
-          { removed: h, profiles: p.length })
-        : { removed: 0, profiles: e.profiles.length }
+      { marked: h, profiles: e.profiles.length }
     );
   }),
   (Migrator.prototype.stopLegacyProcesses = function () {

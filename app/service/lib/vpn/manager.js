@@ -371,7 +371,10 @@ function VpnManager(e) {
     );
   }),
   (VpnManager.prototype.setStartupSafetyError = function (e) {
-    var t = "SHARED_DIRECTORY_REPAIR_FAILED" === e ? e : "";
+    var t =
+      "SHARED_DIRECTORY_REPAIR_FAILED" === e || "STORE_UNRECOVERABLE" === e
+        ? e
+        : "";
     return (
       this.startupSafetyError !== t &&
         ((this.startupSafetyError = t), this.health.invalidate()),

@@ -138,6 +138,55 @@ function readJson(r, e) {
     }
   }
 }
+function pathExists(r) {
+  var t;
+  try {
+    t = fs.statSync(r);
+  } catch (e) {
+    return !1;
+  }
+  return t.isFile();
+}
+function tryParseJson(r) {
+  try {
+    return { ok: !0, value: JSON.parse(r) };
+  } catch (e) {
+    return { ok: !1 };
+  }
+}
+/* Strict reader for user data files. Reports which source parsed instead of
+   silently returning a default: "file" when the canonical path parses,
+   "tmp" when only the interrupted-write sibling parses, ok:!1 when neither
+   does. A JSON literal that is not an object or array (null, number,
+   string) counts as unparsed corruption evidence, not as an empty store. */
+function readJsonStrict(r) {
+  var t, e;
+  try {
+    t = fs.readFileSync(r, "utf8");
+  } catch (i) {
+    t = null;
+  }
+  if (
+    null !== t &&
+    (e = tryParseJson(t)).ok &&
+    null !== e.value &&
+    "object" == typeof e.value
+  )
+    return { ok: !0, value: e.value, source: "file" };
+  try {
+    t = fs.readFileSync(r + ".tmp", "utf8");
+  } catch (i) {
+    t = null;
+  }
+  if (
+    null !== t &&
+    (e = tryParseJson(t)).ok &&
+    null !== e.value &&
+    "object" == typeof e.value
+  )
+    return { ok: !0, value: e.value, source: "tmp" };
+  return { ok: !1 };
+}
 function readTextSafe(r, e) {
   try {
     return fs.readFileSync(r, "utf8");
@@ -171,6 +220,9 @@ module.exports = {
   writeSharedFileAtomic: writeSharedFileAtomic,
   writeJsonAtomic: writeJsonAtomic,
   readJson: readJson,
+  pathExists: pathExists,
+  tryParseJson: tryParseJson,
+  readJsonStrict: readJsonStrict,
   readTextSafe: readTextSafe,
   removeQuiet: removeQuiet,
   fileRevision: fileRevision,

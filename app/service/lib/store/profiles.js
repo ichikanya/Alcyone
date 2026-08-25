@@ -266,7 +266,16 @@ function sanitizeSubscription(r) {
   };
 }
 ((ProfileStore.prototype.read = function () {
-  return normalize(atomic.readJson(this.file, null));
+  var t;
+  if (!atomic.pathExists(this.file)) return normalize(null);
+  if (((t = atomic.readJsonStrict(this.file)), !t.ok))
+    throw err(
+      "STORE_CORRUPT",
+      "profile store is unreadable; refusing to return an empty default",
+    );
+  /* When only the interrupted-write sibling parsed, serve it: the next
+     successful write() heals the canonical file from this content. */
+  return normalize(t.value);
 }),
   (ProfileStore.prototype.write = function (r) {
     r.updatedAt = now();
@@ -307,13 +316,19 @@ function sanitizeSubscription(r) {
     return null;
   }),
   (ProfileStore.prototype.reconcileAutostartProfile = function () {
-    var r = atomic.readJson(this.file, null),
-      e = normalize(r);
+    var r, e;
+    if (!atomic.pathExists(this.file)) return normalize(null);
+    if (((r = atomic.readJsonStrict(this.file)), !r.ok))
+      throw err("STORE_CORRUPT", "profile store is unreadable");
+    e = normalize(r.value);
     if (
-      (r && "object" == typeof r && !isArray(r)
-        ? r.autostartProfileId
+      (r.value && "object" == typeof r.value && !isArray(r.value)
+        ? r.value.autostartProfileId
         : null) !== e.autostartProfileId ||
-      (r && "object" == typeof r && void 0 === r.autostartProfileId)
+      (r.value &&
+        "object" == typeof r.value &&
+        !isArray(r.value) &&
+        void 0 === r.value.autostartProfileId)
     )
       try {
         this.write(e);
