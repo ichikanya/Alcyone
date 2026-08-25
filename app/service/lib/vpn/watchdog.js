@@ -1,0 +1,250 @@
+"use strict";
+
+var fs = require("fs");
+var path = require("path");
+var TICK_MS = 15000;
+var IDLE_PROBE_MS = 30000;
+var RSS_WARMUP_MS = 10 * 60 * 1000;
+var RSS_WINDOW_MS = 30 * 60 * 1000;
+
+function numberFile(file) {
+  try {
+    var value = parseInt(fs.readFileSync(file, "utf8"), 10);
+    return isFinite(value) ? value : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function readStatus(pid) {
+  var result = { rssKb: null, threads: null };
+  var text;
+  try { text = fs.readFileSync("/proc/" + pid + "/status", "utf8"); }
+  catch (error) { return result; }
+  var rss = /^VmRSS:\s+(\d+)\s+kB/im.exec(text);
+  var threads = /^Threads:\s+(\d+)/im.exec(text);
+  if (rss) result.rssKb = parseInt(rss[1], 10);
+  if (threads) result.threads = parseInt(threads[1], 10);
+  return result;
+}
+
+function readNofileLimit(pid) {
+  var text;
+  try { text = fs.readFileSync("/proc/" + pid + "/limits", "utf8"); }
+  catch (error) { return null; }
+  var match = /^Max open files\s+(\d+)/im.exec(text);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+function countFds(pid) {
+  try { return fs.readdirSync("/proc/" + pid + "/fd").length; }
+  catch (error) { return null; }
+}
+
+function readMemory() {
+  var text;
+  try { text = fs.readFileSync("/proc/meminfo", "utf8"); }
+  catch (error) { return { totalKb: null, availableKb: null }; }
+  var total = /^MemTotal:\s+(\d+)\s+kB/im.exec(text);
+  var available = /^MemAvailable:\s+(\d+)\s+kB/im.exec(text);
+  if (!available) available = /^MemFree:\s+(\d+)\s+kB/im.exec(text);
+  return {
+    totalKb: total ? parseInt(total[1], 10) : null,
+    availableKb: available ? parseInt(available[1], 10) : null,
+  };
+}
+
+function median(values) {
+  if (!values.length) return 0;
+  var copy = values.slice(0).sort(function (a, b) { return a - b; });
+  return copy[Math.floor(copy.length / 2)];
+}
+
+function memoryPressure(input) {
+  input = input || {};
+  return !!input.baselineRssKb &&
+    input.growthKb >= Math.max(65536, input.baselineRssKb * 0.5) &&
+    input.monotonicRatio >= 0.8 && input.lowMemorySamples >= 6;
+}
+
+function Watchdog(options) {
+  options = options || {};
+  this.supervisor = options.supervisor;
+  this.routes = options.routes;
+  this.probe = options.probe;
+  this.physicalAvailable = options.physicalAvailable || function () { return true; };
+  this.onIncident = options.onIncident || function () {};
+  this.logger = options.logger || null;
+  this.tunStatsDir = options.tunStatsDir || "/sys/class/net/tun0/statistics";
+  this.now = options.now || Date.now;
+  this.intervalMs = options.intervalMs || TICK_MS;
+  this.setInterval = options.setInterval || setInterval;
+  this.clearInterval = options.clearInterval || clearInterval;
+  this.timer = null;
+  this.startedAt = 0;
+  this.lastCounters = null;
+  this.lastBidirectionalActivity = 0;
+  this.failedProbes = 0;
+  this.probeBusy = false;
+  this.fdHighSamples = 0;
+  this.fdCriticalSamples = 0;
+  this.lowMemorySamples = 0;
+  this.rssSamples = [];
+  this.baselineRssKb = 0;
+  this.incidentOpen = false;
+  this.snapshot = { state: "stopped", warning: "", lastProbeOk: null };
+}
+
+Watchdog.prototype.counters = function () {
+  return {
+    rx: numberFile(path.join(this.tunStatsDir, "rx_bytes")),
+    tx: numberFile(path.join(this.tunStatsDir, "tx_bytes")),
+  };
+};
+
+Watchdog.prototype.processMetrics = function () {
+  var status = this.supervisor.status();
+  var names = Object.keys(status);
+  var metrics = [];
+  var i;
+  for (i = 0; i < names.length; i++) {
+    var item = status[names[i]];
+    if (!item.running || !item.pid) continue;
+    var proc = readStatus(item.pid);
+    var fdLimit = readNofileLimit(item.pid);
+    var fdCount = countFds(item.pid);
+    metrics.push({
+      name: names[i], pid: item.pid, rssKb: proc.rssKb, threads: proc.threads,
+      fdCount: fdCount, fdLimit: fdLimit,
+      fdRatio: fdCount !== null && fdLimit ? fdCount / fdLimit : null,
+    });
+  }
+  return metrics;
+};
+
+Watchdog.prototype.openIncident = function (code, detail) {
+  if (this.incidentOpen) return;
+  this.incidentOpen = true;
+  this.snapshot.state = "incident";
+  this.snapshot.lastErrorCode = code;
+  this.onIncident(code, detail || "");
+};
+
+Watchdog.prototype.checkResources = function (now) {
+  var metrics = this.processMetrics();
+  var combinedRss = 0;
+  var maximumFdRatio = 0;
+  var i;
+  for (i = 0; i < metrics.length; i++) {
+    if (metrics[i].rssKb !== null) combinedRss += metrics[i].rssKb;
+    if (metrics[i].fdRatio !== null && metrics[i].fdRatio > maximumFdRatio)
+      maximumFdRatio = metrics[i].fdRatio;
+  }
+  this.snapshot.processes = metrics;
+  this.snapshot.maximumFdRatio = maximumFdRatio;
+  this.fdCriticalSamples = maximumFdRatio >= 0.95 ? this.fdCriticalSamples + 1 : 0;
+  this.fdHighSamples = maximumFdRatio >= 0.85 ? this.fdHighSamples + 1 : 0;
+  if (this.fdCriticalSamples >= 2 || this.fdHighSamples >= 4)
+    this.snapshot.warning = "FD_PRESSURE_SUSTAINED";
+  else
+    this.snapshot.warning = maximumFdRatio >= 0.70 ? "FD_PRESSURE" : "";
+
+  if (combinedRss > 0) {
+    this.rssSamples.push({ at: now, rssKb: combinedRss });
+    while (this.rssSamples.length && now - this.rssSamples[0].at > RSS_WINDOW_MS)
+      this.rssSamples.shift();
+    if (!this.baselineRssKb && now - this.startedAt >= RSS_WARMUP_MS)
+      this.baselineRssKb = median(this.rssSamples.map(function (sample) { return sample.rssKb; }));
+  }
+  var memory = readMemory();
+  var lowThreshold = memory.totalKb === null ? 32768 : Math.max(32768, memory.totalKb * 0.04);
+  this.lowMemorySamples = memory.availableKb !== null && memory.availableKb < lowThreshold
+    ? this.lowMemorySamples + 1 : 0;
+  var oldest = this.rssSamples.length ? this.rssSamples[0].rssKb : combinedRss;
+  var growth = combinedRss - oldest;
+  var growthThreshold = Math.max(65536, this.baselineRssKb * 0.5);
+  var nonnegative = 0;
+  for (i = 1; i < this.rssSamples.length; i++)
+    if (this.rssSamples[i].rssKb >= this.rssSamples[i - 1].rssKb) nonnegative++;
+  var monotonicRatio = this.rssSamples.length > 1 ? nonnegative / (this.rssSamples.length - 1) : 0;
+  this.snapshot.memory = {
+    availableKb: memory.availableKb, baselineRssKb: this.baselineRssKb,
+    combinedRssKb: combinedRss, growthKb: growth,
+  };
+  if (this.lowMemorySamples > 0 && !this.snapshot.warning)
+    this.snapshot.warning = "LOW_SYSTEM_MEMORY";
+  if (memoryPressure({ baselineRssKb: this.baselineRssKb, growthKb: growth, monotonicRatio: monotonicRatio, lowMemorySamples: this.lowMemorySamples }))
+    this.openIncident("RESOURCE_PRESSURE", "core-rss-growth");
+};
+
+Watchdog.prototype.tick = function () {
+  if (this.incidentOpen) return;
+  var now = this.now();
+  var counters = this.counters();
+  if (this.lastCounters && counters.rx !== null && counters.tx !== null &&
+      (counters.rx > this.lastCounters.rx || counters.tx > this.lastCounters.tx))
+    this.lastBidirectionalActivity = now;
+  if (counters.rx === null || counters.tx === null ||
+      (this.lastCounters && (counters.rx < this.lastCounters.rx || counters.tx < this.lastCounters.tx)))
+    this.lastBidirectionalActivity = 0;
+  this.lastCounters = counters;
+  this.snapshot.counters = counters;
+  this.checkResources(now);
+  if (this.incidentOpen || now - this.lastBidirectionalActivity < IDLE_PROBE_MS || this.probeBusy) return;
+  if (!this.physicalAvailable()) return;
+  var self = this;
+  this.probeBusy = true;
+  this.probe.run(function (error, ok) {
+    self.probeBusy = false;
+    self.snapshot.lastProbeOk = !!ok;
+    if (ok) {
+      self.failedProbes = 0;
+      self.lastBidirectionalActivity = self.now();
+    } else self.failedProbes++;
+    if (self.failedProbes >= 3)
+      self.snapshot.warning = "LIVENESS_PROBE_FAILED";
+  });
+};
+
+Watchdog.prototype.start = function () {
+  if (this.timer) return;
+  this.startedAt = this.now();
+  this.lastBidirectionalActivity = this.startedAt;
+  this.lastCounters = null;
+  this.failedProbes = 0;
+  this.probeBusy = false;
+  this.fdHighSamples = 0;
+  this.fdCriticalSamples = 0;
+  this.lowMemorySamples = 0;
+  this.rssSamples = [];
+  this.baselineRssKb = 0;
+  this.incidentOpen = false;
+  this.snapshot = { state: "watching", warning: "", lastProbeOk: null };
+  var self = this;
+  this.timer = this.setInterval(function () { self.tick(); }, this.intervalMs);
+  if (this.timer && this.timer.unref) this.timer.unref();
+};
+
+Watchdog.prototype.stop = function () {
+  if (this.timer) this.clearInterval(this.timer);
+  this.timer = null;
+  this.probeBusy = false;
+  this.snapshot.state = "stopped";
+};
+
+Watchdog.prototype.status = function () { return this.snapshot; };
+
+module.exports = {
+  TICK_MS: TICK_MS,
+  IDLE_PROBE_MS: IDLE_PROBE_MS,
+  RSS_WARMUP_MS: RSS_WARMUP_MS,
+  RSS_WINDOW_MS: RSS_WINDOW_MS,
+  numberFile: numberFile,
+  readStatus: readStatus,
+  readNofileLimit: readNofileLimit,
+  countFds: countFds,
+  readMemory: readMemory,
+  median: median,
+  memoryPressure: memoryPressure,
+  Watchdog: Watchdog,
+};

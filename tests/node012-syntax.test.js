@@ -1,10 +1,10 @@
-'use strict';
+"use strict";
 
 /* Node 0.12 predates `node --check`, so parse service sources with Function. */
 
-var fs = require('fs');
-var path = require('path');
-var root = path.join(__dirname, '..', 'app', 'service');
+var fs = require("fs");
+var path = require("path");
+var root = path.join(__dirname, "..", "app", "service");
 var files = [];
 var failed = [];
 
@@ -23,14 +23,16 @@ walk(root);
 files.forEach(function (file) {
   try {
     /* Function parses the same ES grammar without executing service startup. */
-    new Function(fs.readFileSync(file, 'utf8'));
+    new Function(fs.readFileSync(file, "utf8"));
   } catch (error) {
-    failed.push(path.relative(root, file) + ': ' + error.message);
+    failed.push(path.relative(root, file) + ": " + error.message);
   }
 });
 
 if (failed.length) {
-  failed.forEach(function (failure) { console.error('FAIL - ' + failure); });
+  failed.forEach(function (failure) {
+    console.error("FAIL - " + failure);
+  });
   process.exit(1);
 }
-console.log('ok   - Node 0.12.2 parsed ' + files.length + ' service files');
+console.log("ok   - Node 0.12.2 parsed " + files.length + " service files");

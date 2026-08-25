@@ -1,366 +1,349 @@
-'use strict';
-
-/* Alcyone Luna service entry point.
-
-   Responsibilities: build the object graph, run idempotent startup
-   initialization, register Luna methods, and clean up on shutdown.
-
-   Root privileges are required and are granted by the Homebrew Channel's
-   elevate-service mechanism, not by anything this service does. Root is needed
-   for exactly two reasons: creating/configuring the tun0 device, and editing
-   the kernel routing table. Everything else (profile storage, subscription
-   downloads, the LAN importer) would run unprivileged, but webOS gives a
-   service a single identity, so the whole service runs elevated and is written
-   defensively for that reason.
-
-   Written to ES5 for the Node runtime on webOS 4. */
-
-var path = require('path');
-var os = require('os');
-
-var editionLib = require('./lib/edition');
-var loggerLib = require('./lib/logger');
-var storeLib = require('./lib/store/profiles');
-var pairingLib = require('./lib/pairing');
-var lockLib = require('./lib/tunnel-lock');
-var vpnLib = require('./lib/vpn/manager');
-var serverLib = require('./lib/web/server');
-var migrateLib = require('./lib/migrate');
-var autostartLib = require('./lib/autostart');
-var diagnosticsLib = require('./lib/diagnostics');
-var apiLib = require('./lib/api');
-var errors = require('./lib/errors');
-var DeviceInfo = require('./lib/device-info');
-
-var edition = editionLib.load(__dirname);
-/* Services and applications are sibling trees under usr/palm. */
-var appDir = path.resolve(__dirname, '..', '..', 'applications', edition.appId);
-var paths = editionLib.paths(edition, appDir);
-
-var runId = loggerLib.newRunId ? loggerLib.newRunId() : '';
-var logger = new loggerLib.Logger({ file: paths.serviceLog, runId: runId, source: 'service' });
-var tunnelLogger = new loggerLib.Logger({ file: paths.tunnelLog, runId: logger.runId, source: 'core' });
-var store = new storeLib.ProfileStore({ file: paths.storeFile, logger: logger });
-var pairing = new pairingLib.PairingManager({ logger: logger });
-var lock = new lockLib.TunnelLock({ edition: edition.id, serviceId: edition.serviceId, logger: logger });
-var autostart = new autostartLib.Autostart({ edition: edition, logger: logger });
-var diagnostics = new diagnosticsLib.Diagnostics({ store: store, edition: edition, logger: logger });
-var vpn = new vpnLib.VpnManager({
-  edition: edition,
-  store: store,
-  logger: logger,
-  lock: lock,
-  paths: paths,
-  dataPlaneProbe: function (callback) { diagnostics.externalIp(callback); }
-});
-var deviceInfo = new DeviceInfo({ logger: logger });
-
-function localAddresses() {
-  var interfaces = os.networkInterfaces();
-  var out = [];
-  Object.keys(interfaces).forEach(function (name) {
-    (interfaces[name] || []).forEach(function (address) {
-      if (address.family === 'IPv4' && !address.internal) out.push(address.address);
-    });
-  });
-  return out;
-}
-
-var context = {
-  edition: edition,
-  paths: paths,
-  logger: logger,
-  tunnelLogger: tunnelLogger,
-  store: store,
-  pairing: pairing,
-  lock: lock,
-  vpn: vpn,
-  autostart: autostart,
-  diagnostics: diagnostics,
-  deviceInfo: deviceInfo,
-  localAddresses: localAddresses
-};
-
-var api = new apiLib.Api(context);
-
-/* The importer delegates every mutation back through the same validated API,
-   so the LAN surface can never do more than the TV UI can. */
-var importer = new serverLib.ImporterServer({
-  pairing: pairing,
-  store: store,
-  logger: logger,
-  port: edition.webPort,
-  handlers: {
-    importValue: function (value, name, compatMode, cb) {
-      if (typeof compatMode === 'function') { cb = compatMode; compatMode = true; }
-      api.importValue(value, name, compatMode, cb);
+"use strict";
+var path = require("path"),
+  os = require("os"),
+  editionLib = require("./lib/edition"),
+  loggerLib = require("./lib/logger"),
+  storeLib = require("./lib/store/profiles"),
+  pairingLib = require("./lib/pairing"),
+  lockLib = require("./lib/tunnel-lock"),
+  vpnLib = require("./lib/vpn/manager"),
+  serverLib = require("./lib/web/server"),
+  migrateLib = require("./lib/migrate"),
+  autostartLib = require("./lib/autostart"),
+  diagnosticsLib = require("./lib/diagnostics"),
+  apiLib = require("./lib/api"),
+  networkObserverLib = require("./lib/net/network-observer"),
+  lifecycleLib = require("./lib/lifecycle-observer"),
+  errors = require("./lib/errors"),
+  DeviceInfo = require("./lib/device-info"),
+  edition = editionLib.load(__dirname),
+  appDir = path.resolve(__dirname, "..", "..", "applications", edition.appId),
+  paths = editionLib.paths(edition, appDir),
+  runId = loggerLib.newRunId ? loggerLib.newRunId() : "",
+  logger = new loggerLib.Logger({
+    file: paths.serviceLog,
+    runId: runId,
+    source: "service",
+  }),
+  tunnelLogger = new loggerLib.Logger({
+    file: paths.tunnelLog,
+    runId: logger.runId,
+    source: "core",
+  }),
+  store = new storeLib.ProfileStore({ file: paths.storeFile, logger: logger }),
+  pairing = new pairingLib.PairingManager({ logger: logger }),
+  lock = new lockLib.TunnelLock({
+    edition: edition.id,
+    serviceId: edition.serviceId,
+    logger: logger,
+    errorCode: "CONNECTION_OWNED_BY_OTHER_EDITION",
+  }),
+  autostart = new autostartLib.Autostart({ edition: edition, logger: logger }),
+  diagnostics = new diagnosticsLib.Diagnostics({
+    store: store,
+    edition: edition,
+    logger: logger,
+  }),
+  vpn = new vpnLib.VpnManager({
+    edition: edition,
+    store: store,
+    logger: logger,
+    lock: lock,
+    paths: paths,
+    launcher: { executable: paths.launcher },
+    dataPlaneProbe: function (e, r) {
+      diagnostics.externalIp(e, r);
     },
-    updateSubscriptions: function (id, cb) { api.updateSubscriptions(id ? { subscriptionId: id } : {}, cb); },
-    deleteSubscription: function (id, cb) { api.deleteSubscription({ subscriptionId: id }, cb); },
-    deleteProfile: function (id, cb) { api.deleteProfile({ profileId: id }, cb); },
-    setActive: function (id, cb) { api.selectProfile({ profileId: id }, cb); }
-  }
-});
-context.importer = importer;
-
-/* Startup: idempotent initialization, then recover any stale tunnel state left
-   by a crash or an unclean shutdown. */
+  }),
+  deviceInfo = new DeviceInfo({ logger: logger }),
+  networkObserver = new networkObserverLib.NetworkObserver({
+    routes: vpn.routes,
+    logger: logger,
+    endpointProvider: function () { return vpn.endpointForNetwork(); },
+  });
+function localAddresses() {
+  var e = os.networkInterfaces(),
+    r = [];
+  return (
+    Object.keys(e).forEach(function (t) {
+      (e[t] || []).forEach(function (e) {
+        "IPv4" !== e.family || e.internal || r.push(e.address);
+      });
+    }),
+    r
+  );
+}
+var context = {
+    edition: edition,
+    paths: paths,
+    logger: logger,
+    tunnelLogger: tunnelLogger,
+    store: store,
+    pairing: pairing,
+    lock: lock,
+    vpn: vpn,
+    autostart: autostart,
+    diagnostics: diagnostics,
+    deviceInfo: deviceInfo,
+    networkObserver: networkObserver,
+    localAddresses: localAddresses,
+  },
+  api = new apiLib.Api(context),
+  lifecycle = new lifecycleLib.LifecycleObserver({
+    edition: edition,
+    logger: logger,
+    network: networkObserver,
+    onResume: function () {
+      var intent = store.runtimeIntent ? store.runtimeIntent() : { desiredConnection: !0 };
+      if (store.setWakeGeneration) store.setWakeGeneration(lifecycle.wakeGeneration);
+      if (intent.desiredConnection && intent.suppressedBootId !== lifecycleLib.bootId())
+        api.autostartTrigger({ source: "resume" }, function () {});
+    },
+  }),
+  importer = new serverLib.ImporterServer({
+    pairing: pairing,
+    store: store,
+    logger: logger,
+    port: edition.webPort,
+    handlers: {
+      importValue: function (e, r, t, i, n) {
+        var o = {};
+        ("function" == typeof t && ((i = t), (t = !0)),
+          n && "object" == typeof n && (o = n),
+          api.importValue(e, r, o, i));
+      },
+      updateSubscriptions: function (e, r) {
+        api.updateSubscriptions(e ? { subscriptionId: e } : {}, r);
+      },
+      setSubscriptionHwid: function (e, r, t) {
+        api.setSubscriptionHwid(
+          { subscriptionId: e, providerHwid: r },
+          t,
+        );
+      },
+      deleteSubscription: function (e, r) {
+        api.deleteSubscription({ subscriptionId: e }, r);
+      },
+      deleteProfile: function (e, r) {
+        api.deleteProfile({ profileId: e }, r);
+      },
+      setActive: function (e, r) {
+        api.selectProfile({ profileId: e }, r);
+      },
+    },
+  });
+context.lifecycle = lifecycle;
 function startup() {
-  var migrator = new migrateLib.Migrator({ paths: paths, edition: edition, logger: logger });
+  var e = new migrateLib.Migrator({
+      paths: paths,
+      edition: edition,
+      logger: logger,
+    }),
+    r = !0;
   try {
-    migrator.run();
-  } catch (migrationError) {
-    logger.error('startup migration failed', { detail: migrationError.code || 'error' });
+    (e.run(), vpn.setStartupSafetyError && vpn.setStartupSafetyError(""));
+  } catch (e) {
+    ((r = !1),
+      logger.error("startup migration failed", { detail: e.code || "error" }),
+      e &&
+        "SHARED_DIRECTORY_REPAIR_FAILED" === e.code &&
+        vpn.setStartupSafetyError &&
+        vpn.setStartupSafetyError(e.code));
   }
-  try {
-    autostart.repairLegacy();
-  } catch (autostartError) {
-    logger.error('autostart migration failed', { detail: autostartError.code || 'error' });
-  }
+  if (r)
+    try {
+      if (autostart.isEnabled() && store.setAutostartEnabled && !store.autostartEnabled())
+        store.setAutostartEnabled(!0);
+      (autostart.repairLegacy(),
+        api.reconcileAutostart && api.reconcileAutostart());
+    } catch (e) {
+      logger.error("autostart migration failed", { detail: e.code || "error" });
+    }
   try {
     vpn.recover();
-  } catch (recoveryError) {
-    logger.error('startup recovery failed', { detail: recoveryError.code || 'error' });
+  } catch (e) {
+    logger.error("startup recovery failed", { detail: e.code || "error" });
   }
-  /* The importer starts on loopback only. LAN exposure requires the user to
-     start a pairing window from the TV. */
-  importer.listen(false, function () {});
-  tunnelLogger.info('core log started', { edition: edition.id, version: edition.version });
-  logger.info('service started', { edition: edition.id, version: edition.version });
+  try {
+    deviceInfo.getDeviceInfo && deviceInfo.getDeviceInfo(function () {});
+  } catch (e) {
+    logger.warn("device info probe failed", { detail: e.code || "error" });
+  }
+  (importer.listen(!1, function () {}),
+    lifecycle.start(),
+    store.autostartEnabled && store.autostartEnabled() &&
+      api.autostartTrigger({ source: "service-start" }, function () {}),
+    tunnelLogger.info("core log started", {
+      edition: edition.id,
+      version: edition.version,
+    }),
+    logger.info("service started", {
+      edition: edition.id,
+      version: edition.version,
+    }));
 }
-
-/* Shutdown: stop children, restore routes, release the tunnel lock. */
-var shuttingDown = false;
-function shutdown(reason) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info('service stopping', { reason: reason });
-  pairing.disable();
-  importer.close(function () {
-    vpn.disconnect(function () {
-      try { lock.release(); } catch (e) {}
+context.importer = importer;
+var shuttingDown = !1;
+function shutdown(e) {
+  shuttingDown ||
+    ((shuttingDown = !0),
+    logger.info("service stopping", { reason: e }),
+    pairing.disable(),
+    importer.close(function () {
+      vpn.disconnect(function () {
+        try {
+          lock.release();
+        } catch (e) {}
+        process.exit(0);
+      });
+    }),
+    setTimeout(function () {
       process.exit(0);
-    });
-  });
-  /* Never hang the platform's shutdown sequence. */
-  setTimeout(function () { process.exit(0); }, 5000);
+    }, 5e3));
 }
-
-/* Restart on request.
-
-   Homebrew's elevate-service rewrites this service's LS2 configuration but
-   never restarts it, so a running jailed process keeps its old identity until
-   it exits. Deferring the shutdown by a short delay lets the Luna response
-   reach the caller first; the platform then relaunches the service on the next
-   call with the rewritten configuration in effect.
-
-   No process is killed by name and no shell is involved: this is the ordinary
-   shutdown path.
-
-   Idempotent on purpose. The Grant-permissions flow polls getState while the
-   service is going down, and a user can press the button twice; scheduling a
-   second shutdown must not double-run the disconnect path. `shutdown()` is
-   already guarded, and the pending flag keeps a repeat call from even
-   queueing. */
-var restartPending = false;
-function requestRestart(reason) {
-  if (restartPending) return true;
-  restartPending = true;
-  setTimeout(function () { shutdown(reason || 'restartService'); }, 250);
-  return true;
+var restartPending = !1;
+function requestRestart(e) {
+  return (
+    restartPending ||
+      ((restartPending = !0),
+      setTimeout(function () {
+        shutdown(e || "restartService");
+      }, 250)),
+    !0
+  );
 }
 context.requestRestart = requestRestart;
-
-/* --- Luna registration --- */
-
 var METHODS = {
-  getState: 'getState',
-  getProfiles: 'getProfiles',
-  getProfilesMeta: 'getProfilesMeta',
-  selectProfile: 'selectProfile',
-  deleteProfile: 'deleteProfile',
-  importLink: 'importLink',
-  addSubscription: 'addSubscription',
-  updateSubscriptions: 'updateSubscriptions',
-  deleteSubscription: 'deleteSubscription',
-  connect: 'connect',
-  disconnect: 'disconnect',
-  restart: 'restart',
-  autostart: 'autostartTrigger',
-  probeProfiles: 'probeProfiles',
-  checkExternalIp: 'checkExternalIp',
-  getLogs: 'getLogs',
-  clearLogs: 'clearLogs',
-  setAutostart: 'setAutostart',
-  setLanguage: 'setLanguage',
-  startPairing: 'startPairing',
-  stopPairing: 'stopPairing',
-  restartService: 'restartService'
+  getState: "getState",
+  getProfiles: "getProfiles",
+  getProfilesMeta: "getProfilesMeta",
+  selectProfile: "selectProfile",
+  deleteProfile: "deleteProfile",
+  importLink: "importLink",
+  addSubscription: "addSubscription",
+  updateSubscriptions: "updateSubscriptions",
+  setSubscriptionHwid: "setSubscriptionHwid",
+  deleteSubscription: "deleteSubscription",
+  connect: "connect",
+  disconnect: "disconnect",
+  restart: "restart",
+  autostart: "autostartTrigger",
+  probeProfiles: "probeProfiles",
+  checkExternalIp: "checkExternalIp",
+  getLogs: "getLogs",
+  clearLogs: "clearLogs",
+  setAutostart: "setAutostart",
+  setAutostartProfile: "setAutostartProfile",
+  setLanguage: "setLanguage",
+  setDnsServer: "setDnsServer",
+  setConnectionMode: "setConnectionMode",
+  startPairing: "startPairing",
+  stopPairing: "stopPairing",
+  restartService: "restartService",
 };
-
-function respond(message, error, result) {
-  var payload;
-  if (error) {
-    payload = errors.toResult(error);
-    logger.warn('method failed', { method: message.method || '', code: payload.errorCode });
-  } else {
-    payload = result || {};
-    payload.returnValue = true;
-    payload.ok = true;
-  }
+function respond(e, r, t) {
+  var i;
+  r
+    ? ((i = errors.toResult(r)),
+      logger.warn("method failed", {
+        method: e.method || "",
+        code: i.errorCode,
+      }))
+    : (((i = t || {}).returnValue = !0), (i.ok = !0));
   try {
-    message.respond(payload);
+    e.respond(i);
   } catch (e) {
-    logger.error('respond failed');
+    logger.error("respond failed");
   }
 }
-
-function callerAllowed(message) {
-  /* message.sender is the applicationID or service busID according to the
-     webos-service contract. Never trust a caller-supplied payload field. */
-  return !!message && String(message.sender || '') === edition.appId;
+function callerAllowed(e, method) {
+  var sender = e && String(e.sender || "");
+  if (sender === edition.appId) return !0;
+  return method === "autostart" &&
+    (sender === "com.webos.service.activitymanager" || sender === "com.palm.activitymanager");
 }
-
-function register(service) {
-  Object.keys(METHODS).forEach(function (name) {
-    var handlerName = METHODS[name];
-    service.register(name, function (message) {
-      var payload = (message && message.payload) || {};
-      if (!callerAllowed(message)) {
-        logger.warn('unauthorized luna caller rejected', { method: name });
-        return respond(message, errors.err('UNAUTHORIZED', 'caller not allowed'));
-      }
+function register(e) {
+  Object.keys(METHODS).forEach(function (r) {
+    var t = METHODS[r];
+    e.register(r, function (e) {
+      var i = (e && e.payload) || {};
+      if (!callerAllowed(e, r))
+        return (
+          logger.warn("unauthorized luna caller rejected", { method: r }),
+          respond(e, errors.err("UNAUTHORIZED", "caller not allowed"))
+        );
       try {
-        api[handlerName](payload, function (error, result) {
-          respond(message, error, result);
+        api[t](i, function (r, t) {
+          respond(e, r, t);
         });
-      } catch (e) {
-        respond(message, errors.isAlcyoneError(e) ? e : errors.err('INTERNAL', ''));
+      } catch (r) {
+        respond(e, errors.isAlcyoneError(r) ? r : errors.err("INTERNAL", ""));
       }
     });
   });
 }
-
-/* Keep the process resident.
-
-   webos-service exits an idle JS service after five seconds unless it holds an
-   ActivityManager activity or was launched by `run-js-service -k`. Alcyone is a
-   supervisor: it owns the tunnel, the core processes and the LAN importer, so
-   the process must outlive the request that woke it.
-
-   Neither escape hatch is reliably available. The LS2 service file is generated
-   by the installer, not shipped by us, and Homebrew's elevate-service rewrites
-   only the jail wrapper — it never adds -k. Creating an activity needs outbound
-   permission to com.webos.service.activitymanager, which the service does not
-   have before elevation. On webOS 4.4.3 that combination makes the process exit
-   five seconds after every launch, taking the importer's listening socket and
-   the core supervisor down with it.
-
-   --disable-timeouts is exactly the switch -k sets. ActivityManager reads it
-   from argv when it is constructed inside the Service constructor, so it has to
-   be in place before that happens. */
 function keepResident() {
-  if (process.argv.indexOf('--disable-timeouts') === -1) {
-    process.argv.push('--disable-timeouts');
-  }
+  -1 === process.argv.indexOf("--disable-timeouts") &&
+    process.argv.push("--disable-timeouts");
 }
-
 function main() {
-  var Service, service;
+  var e, r;
   try {
-    Service = require('webos-service');
+    e = require("webos-service");
   } catch (e) {
-    /* Outside webOS (tests, local runs) there is no bus; stay alive so the
-       loopback importer and startup logic can still be exercised. */
-    startup();
-    logger.warn('webos-service unavailable, running without the Luna bus');
-    return;
+    return (
+      startup(),
+      void logger.warn(
+        "webos-service unavailable, running without the Luna bus",
+      )
+    );
   }
-  keepResident();
-  /* Register immediately.  First-run migration copies large ARM binaries and
-     must not delay the service name/method registration on low-powered TVs. */
-  service = new Service(edition.serviceId);
-  deviceInfo.service = service;
-  register(service);
-  logger.info('luna methods registered', { count: Object.keys(METHODS).length });
-  startup();
-  /* An activity is the platform's preferred residency signal, so still take one
-     when the permission exists. Failure is expected before elevation and must
-     not matter: --disable-timeouts already keeps the process alive. */
-  if (service.activityManager && service.activityManager.create) {
-    service.activityManager.create('alcyone-vpn-supervisor', function () {});
-  }
+  (keepResident(),
+    (r = new e(edition.serviceId)),
+    (deviceInfo.service = r),
+    vpn.setService && vpn.setService(r),
+    networkObserver.setService(r),
+    lifecycle.setService(r),
+    register(r),
+    logger.info("luna methods registered", {
+      count: Object.keys(METHODS).length,
+    }),
+    startup());
 }
-
-process.on('SIGTERM', function () { shutdown('SIGTERM'); });
-process.on('SIGINT', function () { shutdown('SIGINT'); });
-/* A crash here is the difference between a working TV and a dead one, and the
-   log is the only way to see it: stdout goes to pmlog under the platform
-   launcher and is not kept. `code` is undefined for ordinary errors, so
-   recording only that reduced every startup failure to "detail=error". Log the
-   name and message too — logger.scrubValue strips URIs and UUIDs and caps the
-   length, so no stored secret can reach the file. */
-process.on('uncaughtException', function (e) {
-  logger.error('uncaught exception', {
-    detail: (e && e.code) || (e && e.name) || 'error',
-    reason: (e && e.message) || ''
-  });
-  shutdown('uncaughtException');
-});
-
-/* Platform entry point.
-
-   webOS never runs this file as the main module. run-js-service hands the
-   service directory to jsservicelauncher's bootstrap-node.js, which does
-
-     var mod = require(service_dir);
-     if (mod.run) { mod.run(name); }
-
-   resolving package.json's "main". Two consequences, both verified on webOS
-   4.4.3:
-
-   1. `require.main === module` is false on a TV, so that guard alone leaves the
-      module loaded but never started — no Luna methods, no importer, no log
-      file, and every call from the app times out.
-
-   2. `name` is an undeclared identifier in bootstrap-node.js. The argument is
-      evaluated before the call, so exporting `run` at all makes the launcher
-      throw `ReferenceError: name is not defined` and the service dies during
-      startup. Exporting a run() is therefore a trap, not a fix.
-
-   So: start from module load, which is the hook the launcher actually gives us,
-   and export no `run`. The platform has already called palmbus.setAppId() and
-   pushed the role by this point, so this is the correct moment. Tests require
-   this module for its exports and must not start a service, hence the explicit
-   launcher check rather than an unconditional call. */
-var started = false;
+(process.on("SIGTERM", function () {
+  shutdown("SIGTERM");
+}),
+  process.on("SIGINT", function () {
+    shutdown("SIGINT");
+  }),
+  process.on("uncaughtException", function (e) {
+    (logger.error("uncaught exception", {
+      detail: (e && e.code) || (e && e.name) || "error",
+      reason: (e && e.message) || "",
+    }),
+      shutdown("uncaughtException"));
+  }));
+var started = !1;
 function run() {
-  if (started) return;
-  started = true;
-  main();
+  started || ((started = !0), main());
 }
-
 function launchedByPlatform() {
-  /* process.mainModule rather than require.main: they are the same object, but
-     require.main is a per-module snapshot, so only this one can be substituted
-     in a test. */
-  var main = process.mainModule;
-  var entry = (main && main.filename) ? String(main.filename) : '';
-  return entry.indexOf('bootstrap-node') >= 0 || entry.indexOf('jsservicelauncher') >= 0;
+  var e = process.mainModule,
+    r = e && e.filename ? String(e.filename) : "";
+  return (
+    r.indexOf("bootstrap-node") >= 0 || r.indexOf("jsservicelauncher") >= 0
+  );
 }
-
-if (require.main === module || launchedByPlatform()) run();
-
-module.exports = {
-  context: context,
-  api: api,
-  importer: importer,
-  METHODS: METHODS,
-  startup: startup,
-  shutdown: shutdown,
-  register: register,
-  callerAllowed: callerAllowed,
-  keepResident: keepResident,
-  launchedByPlatform: launchedByPlatform
-  /* Deliberately no `run` export: see the launcher note above. */
-};
+((require.main === module || launchedByPlatform()) && run(),
+  (module.exports = {
+    context: context,
+    api: api,
+    importer: importer,
+    METHODS: METHODS,
+    startup: startup,
+    shutdown: shutdown,
+    register: register,
+    callerAllowed: callerAllowed,
+    keepResident: keepResident,
+    launchedByPlatform: launchedByPlatform,
+  }));

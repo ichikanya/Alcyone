@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.2.0 (2026-08-19)
+
+- Added resource-aware tunnel liveness monitoring, route-first fail-open recovery, a single delayed reconnect, and a repeated-incident circuit breaker.
+- Added an optional static ARM launcher with inherited-FD cleanup, parent-death signaling, and per-core descriptor limits.
+- Added policy routing with explicit proxy-endpoint escape rules and safe fallback to the legacy route backend.
+- Added ConnectionManager API negotiation and kernel fallback across webOS generations.
+- Reworked autostart around persistent intent, DHCP readiness, ActivityManager wake triggers, ConnectionManager subscriptions, and Quick Start timer-gap detection.
+- Fixed D-Pad focus escape and server-picker Back focus in autostart settings.
+- Fixed subscription imports that escalated redirects or provider errors into request storms and eventual HTTP 429 responses; client-profile and HWID retries are now explicit, bounded, and demand-driven.
+
 ## 4.0.4 (2026-08-06)
 
 - Replaced the custom IPK archive writer with the official webOS

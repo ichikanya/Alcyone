@@ -1,97 +1,177 @@
-'use strict';
-
-/* Atomic, restrictive-permission persistence.
-
-   Profile stores hold proxy credentials, so every file this module writes is
-   created 0600 inside a 0700 directory. Writes go to a temporary file which is
-   fsynced and then renamed, so an interrupted write can never leave a
-   truncated store behind. On read we transparently recover from a leftover
-   temporary file if the main file is missing or corrupt. */
-
-var fs = require('fs');
-var path = require('path');
-
-var DIR_MODE = 448;  /* 0700 */
-var FILE_MODE = 384; /* 0600 */
-
-function ensureDir(dir) {
-  var parent;
-  if (!dir || dir === path.sep) return;
-  if (fs.existsSync(dir)) {
-    try { fs.chmodSync(dir, DIR_MODE); } catch (e) {}
-    return;
-  }
-  parent = path.dirname(dir);
-  if (parent && parent !== dir) ensureDir(parent);
-  try { fs.mkdirSync(dir, DIR_MODE); } catch (e) {
-    if (!fs.existsSync(dir)) throw e;
-  }
-  try { fs.chmodSync(dir, DIR_MODE); } catch (e2) {}
+"use strict";
+var fs = require("fs"),
+  path = require("path"),
+  DIR_MODE = 448,
+  SHARED_DIR_MODE = 493,
+  FILE_MODE = 384,
+  SPECIAL_MODE_MASK = 4095,
+  PROTECTED_OWNED_DIRS = {
+    "/": !0,
+    "/var": !0,
+    "/var/lib": !0,
+    "/var/lib/webosbrew": !0,
+    "/var/lib/webosbrew/init.d": !0,
+  };
+function directoryError(r, e) {
+  var t = new Error(e || r);
+  return ((t.code = r), t);
 }
-
-/* Write durably: temp file -> fsync -> rename. Rename is atomic on the same
-   filesystem, so readers observe either the old or the new content. */
-function writeFileAtomic(file, data, mode) {
-  var tmp = file + '.tmp';
-  var fd;
-  ensureDir(path.dirname(file));
-  fd = fs.openSync(tmp, 'w', mode || FILE_MODE);
+function isDirectoryStat(r) {
+  return (
+    !!r &&
+    r.isDirectory &&
+    r.isDirectory() &&
+    !(r.isSymbolicLink && r.isSymbolicLink())
+  );
+}
+function lstatDirectory(r) {
+  var e = fs.lstatSync(r);
+  if (!isDirectoryStat(e))
+    throw directoryError(
+      "UNSAFE_DIRECTORY_TARGET",
+      "directory is not a real directory",
+    );
+  return e;
+}
+function requireParentDirectory(r) {
+  var e = path.dirname(r);
+  if (!e || e === r)
+    throw directoryError(
+      "UNSAFE_DIRECTORY_TARGET",
+      "directory has no creatable parent",
+    );
+  return (lstatDirectory(e), e);
+}
+function normalizePosixPath(r) {
+  var e,
+    t,
+    i = "/" === r.charAt(0),
+    n = r.split("/"),
+    o = [];
+  for (e = 0; e < n.length; e++)
+    (t = n[e]) &&
+      "." !== t &&
+      (".." !== t
+        ? o.push(t)
+        : o.length && ".." !== o[o.length - 1]
+          ? o.pop()
+          : i || o.push(t));
+  return o.length ? (i ? "/" : "") + o.join("/") : i ? "/" : ".";
+}
+function ensureExactDirectory(r, e, t) {
+  var i,
+    n = !1,
+    o = !1;
+  if (!r || r === path.sep)
+    throw directoryError(
+      "UNSAFE_DIRECTORY_TARGET",
+      "root is not an owned directory",
+    );
   try {
-    fs.writeSync(fd, data, 0, Buffer.byteLength(data, 'utf8'), null);
-    try { fs.fsyncSync(fd); } catch (eSync) {}
-  } finally {
-    fs.closeSync(fd);
+    (lstatDirectory(r), (n = !0));
+  } catch (r) {
+    if ("ENOENT" !== r.code) throw r;
   }
-  try { fs.chmodSync(tmp, mode || FILE_MODE); } catch (eMode) {}
-  fs.renameSync(tmp, file);
-}
-
-function writeJsonAtomic(file, value, mode) {
-  writeFileAtomic(file, JSON.stringify(value, null, 2), mode);
-}
-
-/* Read JSON, falling back to a recoverable temp file from an interrupted
-   write. Returns `fallback` when nothing usable exists. */
-function readJson(file, fallback) {
-  var raw;
-  try {
-    raw = fs.readFileSync(file, 'utf8');
-    return JSON.parse(raw);
-  } catch (e) {
+  if (!n) {
+    requireParentDirectory(r);
     try {
-      raw = fs.readFileSync(file + '.tmp', 'utf8');
-      return JSON.parse(raw);
-    } catch (e2) {
-      return fallback;
+      (fs.mkdirSync(r, e), (o = !0));
+    } catch (r) {
+      if (!(i = r) || "EEXIST" !== i.code) throw i;
+    }
+    lstatDirectory(r);
+  }
+  return ((o || t) && fs.chmodSync(r, e), !0);
+}
+function ensureOwnedDir(r) {
+  var e,
+    t = String(r || "").replace(/\\/g, "/"),
+    i = normalizePosixPath(t);
+  if (
+    ((e = path.resolve(t)),
+    PROTECTED_OWNED_DIRS[i] ||
+      PROTECTED_OWNED_DIRS[normalizePosixPath(String(e).replace(/\\/g, "/"))])
+  )
+    throw directoryError(
+      "UNSAFE_DIRECTORY_TARGET",
+      "shared system directory cannot be owned",
+    );
+  return ensureExactDirectory((r = e), DIR_MODE, !0);
+}
+function ensureSharedDir(r, e) {
+  return ensureExactDirectory(r, e || SHARED_DIR_MODE, !1);
+}
+function writeAtomic(r, e, t, i) {
+  var n,
+    o = r + ".tmp";
+  (i(path.dirname(r)), (n = fs.openSync(o, "w", t || FILE_MODE)));
+  try {
+    fs.writeSync(n, e, 0, Buffer.byteLength(e, "utf8"), null);
+    try {
+      fs.fsyncSync(n);
+    } catch (r) {}
+  } finally {
+    fs.closeSync(n);
+  }
+  (fs.chmodSync(o, t || FILE_MODE), fs.renameSync(o, r));
+}
+function writeFileAtomic(r, e, t) {
+  writeAtomic(r, e, t, ensureOwnedDir);
+}
+function writeSharedFileAtomic(r, e, t) {
+  writeAtomic(r, e, t, function (r) {
+    ensureSharedDir(r, SHARED_DIR_MODE);
+  });
+}
+function writeJsonAtomic(r, e, t) {
+  writeFileAtomic(r, JSON.stringify(e, null, 2), t);
+}
+function readJson(r, e) {
+  var t;
+  try {
+    return ((t = fs.readFileSync(r, "utf8")), JSON.parse(t));
+  } catch (i) {
+    try {
+      return ((t = fs.readFileSync(r + ".tmp", "utf8")), JSON.parse(t));
+    } catch (r) {
+      return e;
     }
   }
 }
-
-function readTextSafe(file, fallback) {
-  try { return fs.readFileSync(file, 'utf8'); } catch (e) { return fallback === undefined ? '' : fallback; }
-}
-
-function removeQuiet(file) {
-  try { fs.unlinkSync(file); return true; } catch (e) { return false; }
-}
-
-function fileRevision(file) {
+function readTextSafe(r, e) {
   try {
-    var stat = fs.statSync(file);
-    return String(stat.size) + '-' + String(stat.mtime.getTime());
-  } catch (e) {
-    return 'missing';
+    return fs.readFileSync(r, "utf8");
+  } catch (r) {
+    return void 0 === e ? "" : e;
   }
 }
-
+function removeQuiet(r) {
+  try {
+    return (fs.unlinkSync(r), !0);
+  } catch (r) {
+    return !1;
+  }
+}
+function fileRevision(r) {
+  try {
+    var e = fs.statSync(r);
+    return String(e.size) + "-" + String(e.mtime.getTime());
+  } catch (r) {
+    return "missing";
+  }
+}
 module.exports = {
   DIR_MODE: DIR_MODE,
+  SHARED_DIR_MODE: SHARED_DIR_MODE,
   FILE_MODE: FILE_MODE,
-  ensureDir: ensureDir,
+  SPECIAL_MODE_MASK: SPECIAL_MODE_MASK,
+  ensureOwnedDir: ensureOwnedDir,
+  ensureSharedDir: ensureSharedDir,
   writeFileAtomic: writeFileAtomic,
+  writeSharedFileAtomic: writeSharedFileAtomic,
   writeJsonAtomic: writeJsonAtomic,
   readJson: readJson,
   readTextSafe: readTextSafe,
   removeQuiet: removeQuiet,
-  fileRevision: fileRevision
+  fileRevision: fileRevision,
 };

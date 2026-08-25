@@ -19,7 +19,8 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILDER = os.path.join(ROOT, "build_ipk.py")
-VERSION = "4.0.4"
+with open(os.path.join(ROOT, "VERSION"), "r", encoding="utf-8") as version_file:
+    VERSION = version_file.read().strip()
 
 
 def sha256(data):
@@ -122,9 +123,18 @@ def verify(path, expected):
 
     roles_json = json.loads(data[service_prefix + "roles.json"].decode("utf-8"))
     assert roles_json["allowedNames"] == [expected["service_id"]]
-    assert roles_json["permissions"][0]["inbound"] == [expected["app_id"]]
-    assert "*" not in roles_json["permissions"][0]["inbound"]
+    inbound = roles_json["permissions"][0]["inbound"]
+    outbound = roles_json["permissions"][0]["outbound"]
+    assert expected["app_id"] in inbound
+    assert "com.webos.service.activitymanager" in inbound
+    assert "com.webos.service.connectionmanager" in outbound
+    assert "com.palm.connectionmanager" in outbound
+    assert "*" not in inbound and "*" not in outbound
     assert service_prefix + "role.json" in data
+    launcher_path = prefix + "bin/alcyone-exec"
+    assert launcher_path in data
+    if os.name != "nt":
+        assert data_modes[launcher_path] & 0o111
     ca_path = service_prefix + "certs/cacert.pem"
     assert ca_path in data, "current TLS trust bundle missing"
     if os.name != "nt":

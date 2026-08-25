@@ -1,170 +1,143 @@
-'use strict';
-
-/* Runtime integrity for native VPN cores.
-
-   The hashes below are release pins, not values learned from the filesystem.
-   build_ipk.py verifies the same values against cores/provenance.json before a
-   package can be produced. Runtime staging follows a fail-closed sequence:
-
-     1. hash the packaged executable;
-     2. hash the staged executable, if present;
-     3. atomically replace a missing or invalid stage only from the verified
-        packaged executable;
-     4. hash the staged result again;
-     5. hash it once more immediately before spawn (owned by VpnManager).
-
-   Nothing in getState calls this module. Large cores are therefore not hashed
-   during health polling, while every staging and launch path still receives a
-   cryptographic verdict. Written for Node.js 0.12 / ES5. */
-
-var crypto = require('crypto');
-var fs = require('fs');
-var path = require('path');
-var atomic = require('./atomic');
-var supervisorLib = require('./supervisor');
-var errors = require('./errors');
-var err = errors.err;
-
-var PINNED_SHA256 = {
-  xray: '451bfccf7c86f08860296903479d8b92edccc507312b3eb338de33a7cb3dabfb',
-  tun2socks: 'b2bbe63f8144ce67a9f8839541428999302b68cd54fbf14f403c73be75cd719a',
-  'sing-box': 'e1db083cfc4fd9c6c93ce75eaeab9f6b59b490fe8258cd28e970ede28412f8e6'
-};
-
-var COPY_BUFFER_BYTES = 64 * 1024;
-var EXECUTABLE_MODE = 493; /* 0755 */
-
-function expectedFor(name) {
-  var expected = PINNED_SHA256[name];
-  if (!expected || !/^[0-9a-f]{64}$/.test(expected)) {
-    throw err('CORE_INTEGRITY_FAILED', String(name || 'core') + ' has no pinned checksum');
-  }
-  return expected;
+"use strict";
+var crypto = require("crypto"),
+  fs = require("fs"),
+  path = require("path"),
+  atomic = require("./atomic"),
+  supervisorLib = require("./supervisor"),
+  errors = require("./errors"),
+  err = errors.err,
+  PINNED_SHA256 = {
+    "alcyone-exec":
+      "cd7858b1e94df2daa3765f9851d1b9299f5e46a4d5a528940d76ea1b708a2005",
+    xray: "451bfccf7c86f08860296903479d8b92edccc507312b3eb338de33a7cb3dabfb",
+    tun2socks:
+      "b2bbe63f8144ce67a9f8839541428999302b68cd54fbf14f403c73be75cd719a",
+    "sing-box":
+      "e1db083cfc4fd9c6c93ce75eaeab9f6b59b490fe8258cd28e970ede28412f8e6",
+  },
+  COPY_BUFFER_BYTES = 65536,
+  EXECUTABLE_MODE = 493;
+function expectedFor(e) {
+  var r = PINNED_SHA256[e];
+  if (!r || !/^[0-9a-f]{64}$/.test(r))
+    throw err(
+      "CORE_INTEGRITY_FAILED",
+      String(e || "core") + " has no pinned checksum",
+    );
+  return r;
 }
-
-function sha256File(file) {
-  var digest = crypto.createHash('sha256');
-  var buffer = typeof Buffer.alloc === 'function'
-    ? Buffer.alloc(COPY_BUFFER_BYTES)
-    : new Buffer(COPY_BUFFER_BYTES);
-  var fd = null;
-  var offset = 0;
-  var read;
+function sha256File(e) {
+  var r,
+    c = crypto.createHash("sha256"),
+    t =
+      "function" == typeof Buffer.alloc
+        ? Buffer.alloc(COPY_BUFFER_BYTES)
+        : new Buffer(COPY_BUFFER_BYTES),
+    i = null,
+    a = 0;
   try {
-    fd = fs.openSync(file, 'r');
+    i = fs.openSync(e, "r");
     do {
-      read = fs.readSync(fd, buffer, 0, buffer.length, offset);
-      if (read > 0) {
-        digest.update(read === buffer.length ? buffer : buffer.slice(0, read));
-        offset += read;
-      }
-    } while (read > 0);
+      (r = fs.readSync(i, t, 0, t.length, a)) > 0 &&
+        (c.update(r === t.length ? t : t.slice(0, r)), (a += r));
+    } while (r > 0);
   } finally {
-    if (fd !== null) {
-      try { fs.closeSync(fd); } catch (closeError) {}
-    }
+    if (null !== i)
+      try {
+        fs.closeSync(i);
+      } catch (e) {}
   }
-  return digest.digest('hex');
+  return c.digest("hex");
 }
-
-function regularFile(file) {
-  var stat;
+function regularFile(e) {
+  var r;
   try {
-    stat = fs.statSync(file);
-    return stat.isFile() ? stat : null;
+    return (r = fs.statSync(e)).isFile() ? r : null;
   } catch (e) {
     return null;
   }
 }
-
-function matches(file, expected) {
-  if (!regularFile(file)) return false;
+function matches(e, r) {
+  if (!regularFile(e)) return !1;
   try {
-    return sha256File(file) === expected;
+    return sha256File(e) === r;
   } catch (e) {
-    return false;
+    return !1;
   }
 }
-
-function verifyPackaged(file, name) {
-  var expected = expectedFor(name);
-  if (!regularFile(file)) throw err('CORE_MISSING', name + ' packaged binary missing');
-  if (!matches(file, expected)) throw err('CORE_INTEGRITY_FAILED', name + ' packaged checksum mismatch');
-  return expected;
+function verifyPackaged(e, r) {
+  var c = expectedFor(r);
+  if (!regularFile(e))
+    throw err("CORE_MISSING", r + " packaged binary missing");
+  if (!matches(e, c))
+    throw err("CORE_INTEGRITY_FAILED", r + " packaged checksum mismatch");
+  return c;
 }
-
-function copyFileAtomic(source, target) {
-  var temporary = target + '.integrity-' + String(process.pid || 0) + '.tmp';
-  var sourceFd = null;
-  var targetFd = null;
-  var buffer = typeof Buffer.alloc === 'function'
-    ? Buffer.alloc(COPY_BUFFER_BYTES)
-    : new Buffer(COPY_BUFFER_BYTES);
-  var offset = 0;
-  var read;
-
-  atomic.ensureDir(path.dirname(target));
-  try { fs.unlinkSync(temporary); } catch (removeError) {}
-
+function copyFileAtomic(e, r) {
+  var c,
+    t = r + ".integrity-" + String(process.pid || 0) + ".tmp",
+    i = null,
+    a = null,
+    n =
+      "function" == typeof Buffer.alloc
+        ? Buffer.alloc(COPY_BUFFER_BYTES)
+        : new Buffer(COPY_BUFFER_BYTES),
+    f = 0;
+  atomic.ensureOwnedDir(path.dirname(r));
   try {
-    sourceFd = fs.openSync(source, 'r');
-    targetFd = fs.openSync(temporary, 'w', EXECUTABLE_MODE);
+    fs.unlinkSync(t);
+  } catch (e) {}
+  try {
+    ((i = fs.openSync(e, "r")), (a = fs.openSync(t, "w", EXECUTABLE_MODE)));
     do {
-      read = fs.readSync(sourceFd, buffer, 0, buffer.length, offset);
-      if (read > 0) {
-        fs.writeSync(targetFd, buffer, 0, read, null);
-        offset += read;
-      }
-    } while (read > 0);
-    try { fs.fsyncSync(targetFd); } catch (syncError) {}
-  } finally {
-    if (sourceFd !== null) {
-      try { fs.closeSync(sourceFd); } catch (sourceCloseError) {}
-    }
-    if (targetFd !== null) {
-      try { fs.closeSync(targetFd); } catch (targetCloseError) {}
-    }
-  }
-
-  try { fs.chmodSync(temporary, EXECUTABLE_MODE); } catch (modeError) {}
-  fs.renameSync(temporary, target);
-}
-
-function prepare(packaged, staged, name) {
-  var expected = verifyPackaged(packaged, name);
-
-  if (!matches(staged, expected)) {
+      (c = fs.readSync(i, n, 0, n.length, f)) > 0 &&
+        (fs.writeSync(a, n, 0, c, null), (f += c));
+    } while (c > 0);
     try {
-      copyFileAtomic(packaged, staged);
-    } catch (copyError) {
-      try { fs.unlinkSync(staged + '.integrity-' + String(process.pid || 0) + '.tmp'); } catch (removeError) {}
-      throw err('CORE_INTEGRITY_FAILED', name + ' staged restore failed');
+      fs.fsyncSync(a);
+    } catch (e) {}
+  } finally {
+    if (null !== i)
+      try {
+        fs.closeSync(i);
+      } catch (e) {}
+    if (null !== a)
+      try {
+        fs.closeSync(a);
+      } catch (e) {}
+  }
+  try {
+    fs.chmodSync(t, EXECUTABLE_MODE);
+  } catch (e) {}
+  fs.renameSync(t, r);
+}
+function prepare(e, r, c) {
+  var t = verifyPackaged(e, c);
+  if (!matches(r, t))
+    try {
+      copyFileAtomic(e, r);
+    } catch (e) {
+      try {
+        fs.unlinkSync(r + ".integrity-" + String(process.pid || 0) + ".tmp");
+      } catch (e) {}
+      throw err("CORE_INTEGRITY_FAILED", c + " staged restore failed");
     }
-  }
-
-  /* This second hash covers both an existing stage and the atomic restore. */
-  if (!matches(staged, expected)) {
-    throw err('CORE_INTEGRITY_FAILED', name + ' staged checksum mismatch');
-  }
-  try { fs.chmodSync(staged, EXECUTABLE_MODE); } catch (modeError) {}
-  if (!supervisorLib.isExecutableFile(staged).executable) {
-    throw err('CORE_INTEGRITY_FAILED', name + ' staged binary is not executable');
-  }
-  return staged;
+  if (!matches(r, t))
+    throw err("CORE_INTEGRITY_FAILED", c + " staged checksum mismatch");
+  try {
+    fs.chmodSync(r, EXECUTABLE_MODE);
+  } catch (e) {}
+  if (!supervisorLib.isExecutableFile(r).executable)
+    throw err("CORE_INTEGRITY_FAILED", c + " staged binary is not executable");
+  return r;
 }
-
-/* Must be called in the final synchronous step before child_process.spawn. */
-function verifyForLaunch(file, name) {
-  var expected = expectedFor(name);
-  if (!matches(file, expected)) {
-    throw err('CORE_INTEGRITY_FAILED', name + ' launch checksum mismatch');
-  }
-  if (!supervisorLib.isExecutableFile(file).executable) {
-    throw err('CORE_INTEGRITY_FAILED', name + ' launch binary is not executable');
-  }
-  return file;
+function verifyForLaunch(e, r) {
+  if (!matches(e, expectedFor(r)))
+    throw err("CORE_INTEGRITY_FAILED", r + " launch checksum mismatch");
+  if (!supervisorLib.isExecutableFile(e).executable)
+    throw err("CORE_INTEGRITY_FAILED", r + " launch binary is not executable");
+  return e;
 }
-
 module.exports = {
   PINNED_SHA256: PINNED_SHA256,
   expectedFor: expectedFor,
@@ -173,5 +146,5 @@ module.exports = {
   verifyPackaged: verifyPackaged,
   copyFileAtomic: copyFileAtomic,
   prepare: prepare,
-  verifyForLaunch: verifyForLaunch
+  verifyForLaunch: verifyForLaunch,
 };

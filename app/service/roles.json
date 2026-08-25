@@ -1,0 +1,25 @@
+{
+  "exeName": "/usr/bin/node",
+  "type": "regular",
+  "allowedNames": [
+    "com.alcyone.vpn.service"
+  ],
+  "permissions": [
+    {
+      "service": "com.alcyone.vpn.service",
+      "inbound": [
+        "com.alcyone.vpn",
+        "com.webos.service.activitymanager",
+        "com.palm.activitymanager"
+      ],
+      "outbound": [
+        "com.webos.service.activitymanager",
+        "com.palm.activitymanager",
+        "com.webos.service.connectionmanager",
+        "com.palm.connectionmanager",
+        "com.webos.service.systemservice",
+        "com.palm.systemservice"
+      ]
+    }
+  ]
+}

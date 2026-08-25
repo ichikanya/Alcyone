@@ -1,2 +1,2 @@
-1a833239d6656d8a2d267f878f362e70a53d1a89bf1915ab3a05d42b040f9a0a  Alcyone-XRay_4.0.4.ipk
-ec708e424fb4204c0bbe54b1bbd7c68a071c0cc951b7b8b3059b12546a10dd22  Alcyone-sing-box_4.0.4.ipk
+0bfd3805375558f89fab70245549d8d5a4dd95b9b16a8ccf9b0b9b7a87a08318  Alcyone-XRay_4.2.0.ipk
+e7b6e57c70afceca7b23198ad284f13af1ec1aebba08b6f2b7c03dfa4ca9ceac  Alcyone-sing-box_4.2.0.ipk

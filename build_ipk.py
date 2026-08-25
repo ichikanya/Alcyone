@@ -23,7 +23,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(ROOT, "app")
 SERVICE = os.path.join(APP, "service")
 CORES = os.environ.get("ALCYONE_CORES_DIR", os.path.join(ROOT, "build", "cores"))
-VERSION = "4.0.4"
+VERSION_FILE = os.path.join(ROOT, "VERSION")
+VERSION = open(VERSION_FILE, "r", encoding="utf-8").read().strip() if os.path.exists(VERSION_FILE) else "4.2.0"
 SOURCE_DATE_EPOCH = 1700000000
 
 ELF_MACHINES = {
@@ -48,6 +49,7 @@ EDITIONS = {
         "title": "Alcyone XRay",
         "web_port": 8080,
         "binaries": {
+            "bin/alcyone-exec": os.path.join(CORES, "launcher", "alcyone-exec"),
             "bin/xray": os.path.join(CORES, "xray", "xray"),
             "bin/tun2socks": os.path.join(CORES, "tun2socks", "tun2socks"),
         },
@@ -70,6 +72,7 @@ EDITIONS = {
         "title": "Alcyone sing-box",
         "web_port": 8081,
         "binaries": {
+            "bin/alcyone-exec": os.path.join(CORES, "launcher", "alcyone-exec"),
             "bin/sing-box": os.path.join(CORES, "sing-box", "sing-box"),
         },
         "assets": {},
@@ -184,8 +187,19 @@ def service_roles(edition):
         "allowedNames": [edition["service_id"]],
         "permissions": [{
             "service": edition["service_id"],
-            "inbound": [edition["app_id"]],
-            "outbound": ["com.webos.service.activitymanager"],
+            "inbound": [
+                edition["app_id"],
+                "com.webos.service.activitymanager",
+                "com.palm.activitymanager",
+            ],
+            "outbound": [
+                "com.webos.service.activitymanager",
+                "com.palm.activitymanager",
+                "com.webos.service.connectionmanager",
+                "com.palm.connectionmanager",
+                "com.webos.service.systemservice",
+                "com.palm.systemservice",
+            ],
         }],
     })
 

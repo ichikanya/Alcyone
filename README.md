@@ -1,6 +1,6 @@
 # Alcyone
 
-Alcyone is a VPN client for rooted LG webOS TVs. Version 4.0.4 is available in two independently installable editions that share the same TV UI, subscription importer, routing controls, and web interface.
+Alcyone is a VPN client for rooted LG webOS TVs. Version 4.2.0 is available in two independently installable editions that share the same TV UI, subscription importer, routing controls, and web interface.
 
 | Edition | Best for | Core and identity |
 | --- | --- | --- |
@@ -24,8 +24,8 @@ https://ichikanya.github.io/Alcyone/r.json
 
 The feed lists both editions. For manual installation:
 
-- [Alcyone XRay 4.0.4](https://github.com/ichikanya/Alcyone/releases/download/v4.0.4/Alcyone-XRay_4.0.4.ipk)
-- [Alcyone sing-box 4.0.4](https://github.com/ichikanya/Alcyone/releases/download/v4.0.4/Alcyone-sing-box_4.0.4.ipk)
+- [Alcyone XRay 4.2.0](https://github.com/ichikanya/Alcyone/releases/download/v4.2.0/Alcyone-XRay_4.2.0.ipk)
+- [Alcyone sing-box 4.2.0](https://github.com/ichikanya/Alcyone/releases/download/v4.2.0/Alcyone-sing-box_4.2.0.ipk)
 
 Install an IPK with webOS Dev Manager, `ares-install`, or the Homebrew Channel installation service.
 
@@ -58,8 +58,8 @@ python build_ipk.py --edition all
 Artifacts are written to:
 
 ```text
-release-assets/Alcyone-XRay_4.0.4.ipk
-release-assets/Alcyone-sing-box_4.0.4.ipk
+release-assets/Alcyone-XRay_4.2.0.ipk
+release-assets/Alcyone-sing-box_4.2.0.ipk
 ```
 
 The builder stages edition-specific metadata, service identifiers and pinned
@@ -105,4 +105,4 @@ Feedback and bug reports: [@AlcyoneVPN](https://t.me/AlcyoneVPN)
 
 ## По-русски
 
-Alcyone 4.0.4 выпускается в двух вариантах: **XRay** для больших подписок, XHTTP и полных конфигураций XRay; **sing-box** для маломощных телевизоров, быстрого запуска и минимального количества процессов. Оба варианта имеют прежний интерфейс и устанавливаются независимо. Одновременно запускайте только один VPN-туннель.
+Alcyone 4.2.0 выпускается в двух вариантах: **XRay** для больших подписок, XHTTP и полных конфигураций XRay; **sing-box** для маломощных телевизоров, быстрого запуска и минимального количества процессов. Оба варианта имеют прежний интерфейс и устанавливаются независимо. Одновременно запускайте только один VPN-туннель.

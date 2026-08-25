@@ -1,129 +1,201 @@
-'use strict';
-
-/* Device information and Hardware Identifier (HWID) derivation.
-
-   Obtains TV properties via webOS Luna APIs and physical hardware inspection
-   when available, deriving a deterministic hardware identifier for provider
-   compatibility mode.
-
-   Written to ES5 for Node.js 0.12 on webOS 4+. */
-
-var crypto = require('crypto');
-var os = require('os');
-var fs = require('fs');
-
-function DeviceInfo(options) {
-  options = options || {};
-  this.service = options.service || null;
-  this.logger = options.logger || null;
-  this._deviceData = null;
-  this._hwid = null;
+"use strict";
+var crypto = require("crypto"),
+  os = require("os"),
+  fs = require("fs"),
+  atomic = require("./atomic"),
+  DEFAULT_IDENTITY_FILE =
+    "linux" === process.platform
+      ? "/var/lib/alcyone-shared/device-identity.json"
+      : "";
+function DeviceInfo(e) {
+  ((e = e || {}),
+    (this.service = e.service || null),
+    (this.logger = e.logger || null),
+    (this.identityFile = e.identityFile || DEFAULT_IDENTITY_FILE),
+    (this._deviceData = null),
+    (this._hwid = null));
 }
-
-DeviceInfo.prototype._readPhysicalHardwareId = function () {
-  var sysPaths = [
-    '/sys/class/net/eth0/address',
-    '/sys/class/net/wlan0/address',
-    '/var/preferences/system',
-    '/etc/hostname',
-    '/sys/devices/virtual/dmi/id/product_uuid'
-  ], i, content;
-
-  for (i = 0; i < sysPaths.length; i++) {
+function localeParts() {
+  var e = String((process.env && process.env.LANG) || "en-US")
+    .split(".")[0]
+    .replace(/_/g, "-");
+  return e || "en-US";
+}
+function validHwid(e) {
+  return /^[a-f0-9]{32}$/i.test(String(e || ""));
+}
+function readPersistedHwid(e) {
+  var r, t;
+  if (!e) return "";
+  try {
+    r = atomic.readJson(e, null);
+    t = r && r.hwid;
+    return validHwid(t) ? String(t).toLowerCase() : "";
+  } catch (e) {
+    return "";
+  }
+}
+function persistHwid(e, r, t) {
+  if (!e || !validHwid(r)) return;
+  try {
+    atomic.writeJsonAtomic(e, { version: 1, hwid: String(r).toLowerCase() });
+  } catch (e) {
+    t && t.warn && t.warn("device identity persistence failed", { code: "STORE_WRITE_FAILED" });
+  }
+}
+function deriveHwid(e) {
+  return crypto
+    .createHash("sha256")
+    .update("alcyone:" + String(e || "alcyone-device"), "utf8")
+    .digest("hex")
+    .slice(0, 32);
+}
+((DeviceInfo.prototype._readPhysicalHardwareId = function () {
+  var e,
+    i,
+    t = [
+      "/sys/class/net/eth0/address",
+      "/sys/class/net/wlan0/address",
+      "/var/preferences/system",
+      "/etc/hostname",
+      "/sys/devices/virtual/dmi/id/product_uuid",
+    ];
+  for (e = 0; e < t.length; e++)
     try {
-      if (fs.existsSync(sysPaths[i])) {
-        content = String(fs.readFileSync(sysPaths[i], 'utf8')).trim();
-        if (content && content.length >= 4 && content !== '127.0.0.1' && content !== 'localhost') {
-          return content;
-        }
-      }
+      if (
+        fs.existsSync(t[e]) &&
+        (i = String(fs.readFileSync(t[e], "utf8")).trim()) &&
+        i.length >= 4 &&
+        "127.0.0.1" !== i &&
+        "localhost" !== i
+      )
+        return i;
     } catch (e) {}
-  }
-  return '';
-};
-
-DeviceInfo.prototype.getDeviceInfo = function (callback) {
-  if (this._deviceData && this._deviceData.ndid) {
-    return callback(null, this._deviceData);
-  }
-  var self = this;
-
-  function setDeviceData(rawId, model, fw, sdk) {
-    self._deviceData = {
-      modelName: model || 'webOS TV',
-      firmwareVersion: fw || sdk || '4.0.0',
-      osVersion: sdk || '4.0.0',
-      ndid: rawId || self._readPhysicalHardwareId() || os.hostname() || 'webos-tv'
-    };
-    return self._deviceData;
-  }
-
-  if (this.service && typeof this.service.call === 'function') {
-    try {
-      this.service.call('luna://com.webos.service.systemservice/queryDeviceInfo', {}, function (response) {
-        var payload = (response && response.payload) || response || {};
-        if (payload.returnValue !== false && (payload.ndid || payload.serialNumber)) {
-          return callback(null, setDeviceData(payload.ndid || payload.serialNumber, payload.modelName, payload.firmwareVersion, payload.sdkVersion));
-        }
-        /* Fallback Luna method 2: systemproperty */
-        try {
-          self.service.call('luna://com.webos.service.tv.systemproperty/getSystemInfo', { keys: ['serialNumber', 'modelName', 'firmwareVersion', 'sdkVersion'] }, function (res2) {
-            var p2 = (res2 && res2.payload) || res2 || {};
-            if (p2.returnValue !== false && p2.serialNumber) {
-              return callback(null, setDeviceData(p2.serialNumber, p2.modelName, p2.firmwareVersion, p2.sdkVersion));
-            }
-            self._fallbackDeviceInfo(callback);
-          });
-        } catch (e2) {
-          self._fallbackDeviceInfo(callback);
-        }
-      });
-      return;
-    } catch (e) {
-      if (this.logger) this.logger.warn('queryDeviceInfo failed', { detail: (e && e.message) || 'error' });
+  return "";
+}),
+  (DeviceInfo.prototype.getDeviceInfo = function (e) {
+    if (this._deviceData && this._deviceData.ndid)
+      return e(null, this._deviceData);
+    var i = this;
+    function t(e, t, s, r) {
+      return (
+        (i._deviceData = {
+          modelName: t || "webOS TV",
+          firmwareVersion: s || r || "unknown",
+          osVersion: r || "unknown",
+          sdkVersion: r || "",
+          locale: localeParts(),
+          ndid: e || i._readPhysicalHardwareId() || os.hostname() || "webos-tv",
+        }),
+        i._deviceData
+      );
     }
-  }
-  this._fallbackDeviceInfo(callback);
-};
-
-DeviceInfo.prototype._fallbackDeviceInfo = function (callback) {
-  var rawId = this._readPhysicalHardwareId() || os.hostname() || 'webos-tv';
-  this._deviceData = {
-    modelName: 'webOS TV',
-    firmwareVersion: '4.0.0',
-    osVersion: '4.0.0',
-    ndid: rawId
-  };
-  callback(null, this._deviceData);
-};
-
-DeviceInfo.prototype.getHwid = function (callback) {
-  if (this._hwid) {
-    return callback(null, this._hwid);
-  }
-  var self = this;
-  this.getDeviceInfo(function (err, info) {
-    var rawId = (info && info.ndid) || self._readPhysicalHardwareId() || os.hostname() || 'alcyone-device';
-    var hash = crypto.createHash('sha256').update('alcyone:' + rawId, 'utf8').digest('hex');
-    self._hwid = hash.slice(0, 32);
-    callback(null, self._hwid);
-  });
-};
-
-DeviceInfo.prototype.getHwidSync = function () {
-  if (this._hwid) return this._hwid;
-  var rawId = (this._deviceData && this._deviceData.ndid) || this._readPhysicalHardwareId() || os.hostname() || 'alcyone-device';
-  var hash = crypto.createHash('sha256').update('alcyone:' + rawId, 'utf8').digest('hex');
-  this._hwid = hash.slice(0, 32);
-  return this._hwid;
-};
-
-DeviceInfo.prototype.getDiagnostics = function () {
-  return {
-    deviceIdAvailable: !!(this._hwid || (this._deviceData && this._deviceData.ndid)),
-    modelName: (this._deviceData && this._deviceData.modelName) || 'webOS TV',
-    osVersion: (this._deviceData && this._deviceData.osVersion) || '4.0.0'
-  };
-};
-
-module.exports = DeviceInfo;
+    if (this.service && "function" == typeof this.service.call)
+      try {
+        return void this.service.call(
+          "luna://com.webos.service.systemservice/queryDeviceInfo",
+          {},
+          function (s) {
+            var r = (s && s.payload) || s || {};
+            if (!1 !== r.returnValue && (r.ndid || r.serialNumber))
+              return e(
+                null,
+                t(
+                  r.ndid || r.serialNumber,
+                  r.modelName,
+                  r.firmwareVersion,
+                  r.sdkVersion,
+                ),
+              );
+            try {
+              i.service.call(
+                "luna://com.webos.service.tv.systemproperty/getSystemInfo",
+                {
+                  keys: [
+                    "serialNumber",
+                    "modelName",
+                    "firmwareVersion",
+                    "sdkVersion",
+                  ],
+                },
+                function (s) {
+                  var r = (s && s.payload) || s || {};
+                  if (!1 !== r.returnValue && r.serialNumber)
+                    return e(
+                      null,
+                      t(
+                        r.serialNumber,
+                        r.modelName,
+                        r.firmwareVersion,
+                        r.sdkVersion,
+                      ),
+                    );
+                  i._fallbackDeviceInfo(e);
+                },
+              );
+            } catch (t) {
+              i._fallbackDeviceInfo(e);
+            }
+          },
+        );
+      } catch (e) {
+        this.logger &&
+          this.logger.warn("queryDeviceInfo failed", {
+            detail: (e && e.message) || "error",
+          });
+      }
+    this._fallbackDeviceInfo(e);
+  }),
+  (DeviceInfo.prototype._fallbackDeviceInfo = function (e) {
+    var i = this._readPhysicalHardwareId() || os.hostname() || "webos-tv";
+    ((this._deviceData = {
+      modelName: "webOS TV",
+      firmwareVersion: "unknown",
+      osVersion: "unknown",
+      sdkVersion: "",
+      locale: localeParts(),
+      ndid: i,
+    }),
+      e(null, this._deviceData));
+  }),
+  (DeviceInfo.prototype.getHwid = function (e) {
+    if (this._hwid) return e(null, this._hwid);
+    var persisted = readPersistedHwid(this.identityFile);
+    if (persisted) return ((this._hwid = persisted), e(null, persisted));
+    var i = this;
+    this.getDeviceInfo(function (t, s) {
+      var r =
+          (s && s.ndid) ||
+          i._readPhysicalHardwareId() ||
+          os.hostname() ||
+          "alcyone-device",
+        a = deriveHwid(r);
+      ((i._hwid = a), persistHwid(i.identityFile, i._hwid, i.logger), e(null, i._hwid));
+    });
+  }),
+  (DeviceInfo.prototype.getHwidSync = function () {
+    if (this._hwid) return this._hwid;
+    var persisted = readPersistedHwid(this.identityFile);
+    if (persisted) return ((this._hwid = persisted), persisted);
+    var e =
+        (this._deviceData && this._deviceData.ndid) ||
+        this._readPhysicalHardwareId() ||
+        os.hostname() ||
+        "alcyone-device",
+      i = deriveHwid(e);
+    return (persistHwid(this.identityFile, i, this.logger), (this._hwid = i), this._hwid);
+  }),
+  (DeviceInfo.prototype.getDiagnostics = function () {
+    return {
+      deviceIdAvailable: !!(
+        this._hwid ||
+        (this._deviceData && this._deviceData.ndid)
+      ),
+      modelName: (this._deviceData && this._deviceData.modelName) || "webOS TV",
+      osVersion: (this._deviceData && this._deviceData.osVersion) || "unknown",
+      sdkVersion: (this._deviceData && this._deviceData.sdkVersion) || "",
+      locale: (this._deviceData && this._deviceData.locale) || localeParts(),
+      osName: "webOS",
+    };
+  }),
+  (module.exports = DeviceInfo));

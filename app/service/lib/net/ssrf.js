@@ -1,311 +1,301 @@
-'use strict';
-
-/* SSRF policy for the subscription importer.
-
-   The importer fetches URLs the user pastes, so it is the one place where a
-   remote party chooses our destination. Everything here is deny-by-default:
-   only http/https, only public unicast addresses, and every redirect hop is
-   re-validated with the same rules.
-
-   Pure module: no filesystem, no sockets, no Luna, no child processes and no
-   global mutable state. The HTTP client resolves names and asks this module
-   for a verdict, so the policy stays unit-testable in isolation. */
-
-var errors = require('../errors');
-var err = errors.err;
-
-var MAX_REDIRECTS = 5;
-
-/* Names that must never be resolved, whatever DNS claims. */
-var BLOCKED_HOST_SUFFIXES = [
-  '.local', '.localdomain', '.internal', '.intranet', '.lan',
-  '.home', '.home.arpa', '.corp', '.private', '.localhost'
-];
-var BLOCKED_HOST_EXACT = {
-  'localhost': 1,
-  'localhost.localdomain': 1,
-  'ip6-localhost': 1,
-  'ip6-loopback': 1,
-  'metadata': 1,
-  'metadata.google.internal': 1,
-  'instance-data': 1
-};
-
-/* Headers that must not survive a cross-origin redirect. */
-var SENSITIVE_HEADERS = [
-  'authorization', 'cookie', 'proxy-authorization', 'x-hwid'
-];
-
-function parseIpv4(text) {
-  var m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(text || ''));
-  var out = [], i, part;
-  if (!m) return null;
-  for (i = 1; i <= 4; i++) {
-    part = m[i];
-    /* Reject ambiguous zero-padded forms such as 0177.0.0.1. */
-    if (part.length > 1 && part.charAt(0) === '0') return null;
-    part = parseInt(part, 10);
-    if (!(part >= 0 && part <= 255)) return null;
-    out.push(part);
+"use strict";
+var errors = require("../errors"),
+  err = errors.err,
+  MAX_REDIRECTS = 5,
+  BLOCKED_HOST_SUFFIXES = [
+    ".local",
+    ".localdomain",
+    ".internal",
+    ".intranet",
+    ".lan",
+    ".home",
+    ".home.arpa",
+    ".corp",
+    ".private",
+    ".localhost",
+  ],
+  BLOCKED_HOST_EXACT = {
+    localhost: 1,
+    "localhost.localdomain": 1,
+    "ip6-localhost": 1,
+    "ip6-loopback": 1,
+    metadata: 1,
+    "metadata.google.internal": 1,
+    "instance-data": 1,
+  },
+  SENSITIVE_HEADERS = [
+    "authorization",
+    "cookie",
+    "proxy-authorization",
+    "x-hwid",
+  ];
+function parseIpv4(e) {
+  var r,
+    t,
+    i = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(e || "")),
+    n = [];
+  if (!i) return null;
+  for (r = 1; r <= 4; r++) {
+    if ((t = i[r]).length > 1 && "0" === t.charAt(0)) return null;
+    if (!((t = parseInt(t, 10)) >= 0 && t <= 255)) return null;
+    n.push(t);
   }
-  return out;
+  return n;
 }
-
-function inCidr4(octets, a, b, c, d, bits) {
-  var value = (((octets[0] << 24) >>> 0) + (octets[1] << 16) + (octets[2] << 8) + octets[3]) >>> 0;
-  var base = (((a << 24) >>> 0) + (b << 16) + (c << 8) + d) >>> 0;
-  var mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
-  return ((value & mask) >>> 0) === ((base & mask) >>> 0);
+function inCidr4(e, r, t, i, n, l) {
+  var o = 0 === l ? 0 : (4294967295 << (32 - l)) >>> 0;
+  return (
+    (((((e[0] << 24) >>> 0) + (e[1] << 16) + (e[2] << 8) + e[3]) >>> 0) & o) >>>
+      0 ==
+    (((((r << 24) >>> 0) + (t << 16) + (i << 8) + n) >>> 0) & o) >>> 0
+  );
 }
-
-/* Reason string when an IPv4 address must not be contacted, '' when allowed. */
-function blockedIpv4Reason(octets) {
-  if (inCidr4(octets, 0, 0, 0, 0, 8)) return 'unspecified';
-  if (inCidr4(octets, 10, 0, 0, 0, 8)) return 'private';
-  if (inCidr4(octets, 100, 64, 0, 0, 10)) return 'carrier-grade-nat';
-  if (inCidr4(octets, 127, 0, 0, 0, 8)) return 'loopback';
-  if (inCidr4(octets, 169, 254, 0, 0, 16)) return 'link-local';
-  if (inCidr4(octets, 172, 16, 0, 0, 12)) return 'private';
-  if (inCidr4(octets, 192, 0, 0, 0, 24)) return 'reserved';
-  if (inCidr4(octets, 192, 0, 2, 0, 24)) return 'documentation';
-  if (inCidr4(octets, 192, 88, 99, 0, 24)) return 'reserved';
-  if (inCidr4(octets, 192, 168, 0, 0, 16)) return 'private';
-  if (inCidr4(octets, 198, 18, 0, 0, 15)) return 'benchmarking';
-  if (inCidr4(octets, 198, 51, 100, 0, 24)) return 'documentation';
-  if (inCidr4(octets, 203, 0, 113, 0, 24)) return 'documentation';
-  if (inCidr4(octets, 224, 0, 0, 0, 4)) return 'multicast';
-  if (inCidr4(octets, 240, 0, 0, 0, 4)) return 'reserved';
-  return '';
+function blockedIpv4Reason(e) {
+  return inCidr4(e, 0, 0, 0, 0, 8)
+    ? "unspecified"
+    : inCidr4(e, 10, 0, 0, 0, 8)
+      ? "private"
+      : inCidr4(e, 100, 64, 0, 0, 10)
+        ? "carrier-grade-nat"
+        : inCidr4(e, 127, 0, 0, 0, 8)
+          ? "loopback"
+          : inCidr4(e, 169, 254, 0, 0, 16)
+            ? "link-local"
+            : inCidr4(e, 172, 16, 0, 0, 12)
+              ? "private"
+              : inCidr4(e, 192, 0, 0, 0, 24)
+                ? "reserved"
+                : inCidr4(e, 192, 0, 2, 0, 24)
+                  ? "documentation"
+                  : inCidr4(e, 192, 88, 99, 0, 24)
+                    ? "reserved"
+                    : inCidr4(e, 192, 168, 0, 0, 16)
+                      ? "private"
+                      : inCidr4(e, 198, 18, 0, 0, 15)
+                        ? "benchmarking"
+                        : inCidr4(e, 198, 51, 100, 0, 24) ||
+                            inCidr4(e, 203, 0, 113, 0, 24)
+                          ? "documentation"
+                          : inCidr4(e, 224, 0, 0, 0, 4)
+                            ? "multicast"
+                            : inCidr4(e, 240, 0, 0, 0, 4)
+                              ? "reserved"
+                              : "";
 }
-
-/* Expand an IPv6 literal into 8 numeric groups, or null when malformed. */
-function parseIpv6(text) {
-  var input = String(text || '').trim();
-  var halves, head, tail, groups, i;
-
-  if (input.charAt(0) === '[' && input.charAt(input.length - 1) === ']') input = input.slice(1, -1);
-  /* A scoped address targets a local interface; never a valid remote target. */
-  if (input.indexOf('%') >= 0) return null;
-  if (input.indexOf(':') < 0) return null;
-  if (input.indexOf(':::') >= 0) return null;
-
-  halves = input.split('::');
-  if (halves.length > 2) return null;
-
-  function expand(part) {
-    var pieces = part === '' ? [] : part.split(':');
-    var out = [], j, piece, v4;
-    for (j = 0; j < pieces.length; j++) {
-      piece = pieces[j];
-      if (piece === '') return null;
-      /* A trailing dotted quad stands for the final two groups. */
-      if (piece.indexOf('.') >= 0) {
-        if (j !== pieces.length - 1) return null;
-        v4 = parseIpv4(piece);
-        if (!v4) return null;
-        out.push((v4[0] << 8) | v4[1]);
-        out.push((v4[2] << 8) | v4[3]);
-        continue;
+function parseIpv6(e) {
+  var r,
+    t,
+    i,
+    n,
+    l,
+    o = String(e || "").trim();
+  if (
+    ("[" === o.charAt(0) &&
+      "]" === o.charAt(o.length - 1) &&
+      (o = o.slice(1, -1)),
+    o.indexOf("%") >= 0)
+  )
+    return null;
+  if (o.indexOf(":") < 0) return null;
+  if (o.indexOf(":::") >= 0) return null;
+  if ((r = o.split("::")).length > 2) return null;
+  function s(e) {
+    var r,
+      t,
+      i,
+      n = "" === e ? [] : e.split(":"),
+      l = [];
+    for (r = 0; r < n.length; r++) {
+      if ("" === (t = n[r])) return null;
+      if (t.indexOf(".") >= 0) {
+        if (r !== n.length - 1) return null;
+        if (!(i = parseIpv4(t))) return null;
+        (l.push((i[0] << 8) | i[1]), l.push((i[2] << 8) | i[3]));
+      } else {
+        if (!/^[0-9a-fA-F]{1,4}$/.test(t)) return null;
+        l.push(parseInt(t, 16));
       }
-      if (!/^[0-9a-fA-F]{1,4}$/.test(piece)) return null;
-      out.push(parseInt(piece, 16));
     }
-    return out;
+    return l;
   }
-
-  if (halves.length === 1) {
-    head = expand(halves[0]);
-    return head && head.length === 8 ? head : null;
-  }
-
-  head = halves[0] === '' ? [] : expand(halves[0]);
-  tail = halves[1] === '' ? [] : expand(halves[1]);
-  if (!head || !tail) return null;
-  if (head.length + tail.length > 7) return null;
-
-  groups = head.slice(0);
-  for (i = head.length + tail.length; i < 8; i++) groups.push(0);
-  for (i = 0; i < tail.length; i++) groups.push(tail[i]);
-  return groups.length === 8 ? groups : null;
+  if (1 === r.length) return (t = s(r[0])) && 8 === t.length ? t : null;
+  if (
+    ((t = "" === r[0] ? [] : s(r[0])),
+    (i = "" === r[1] ? [] : s(r[1])),
+    !t || !i)
+  )
+    return null;
+  if (t.length + i.length > 7) return null;
+  for (n = t.slice(0), l = t.length + i.length; l < 8; l++) n.push(0);
+  for (l = 0; l < i.length; l++) n.push(i[l]);
+  return 8 === n.length ? n : null;
 }
-
-function allZero(groups, count) {
-  var i;
-  for (i = 0; i < count; i++) if (groups[i] !== 0) return false;
-  return true;
+function allZero(e, r) {
+  var t;
+  for (t = 0; t < r; t++) if (0 !== e[t]) return !1;
+  return !0;
 }
-
-function embeddedIpv4(groups) {
-  return [groups[6] >> 8, groups[6] & 0xff, groups[7] >> 8, groups[7] & 0xff];
+function embeddedIpv4(e) {
+  return [e[6] >> 8, 255 & e[6], e[7] >> 8, 255 & e[7]];
 }
-
-/* Reason string when an IPv6 address must not be contacted, '' when allowed. */
-function blockedIpv6Reason(groups) {
-  var i, nonZero = false, reason;
-
-  for (i = 0; i < 8; i++) if (groups[i] !== 0) nonZero = true;
-  if (!nonZero) return 'unspecified';
-  if (allZero(groups, 7) && groups[7] === 1) return 'loopback';
-
-  /* IPv4-mapped (::ffff:0:0/96) and IPv4-compatible: judge the inner IPv4. */
-  if (allZero(groups, 5) && groups[5] === 0xffff) {
-    reason = blockedIpv4Reason(embeddedIpv4(groups));
-    return reason ? 'ipv4-mapped-' + reason : '';
-  }
-  if (allZero(groups, 6)) return 'ipv4-compatible';
-
-  /* NAT64 well-known prefix 64:ff9b::/96 carries an IPv4 destination. */
-  if (groups[0] === 0x0064 && groups[1] === 0xff9b && allZero(groups.slice(2), 4)) {
-    reason = blockedIpv4Reason(embeddedIpv4(groups));
-    return reason ? 'nat64-' + reason : '';
-  }
-  /* 6to4 2002::/16 embeds the IPv4 address in groups 1-2. */
-  if (groups[0] === 0x2002) {
-    reason = blockedIpv4Reason([groups[1] >> 8, groups[1] & 0xff, groups[2] >> 8, groups[2] & 0xff]);
-    return reason ? '6to4-' + reason : '';
-  }
-
-  if (groups[0] === 0x0100 && allZero(groups.slice(1), 3)) return 'discard';
-  if (groups[0] === 0x2001 && groups[1] === 0x0db8) return 'documentation';
-  if (groups[0] === 0x2001 && groups[1] === 0x0000) return 'teredo';
-  if ((groups[0] & 0xfe00) === 0xfc00) return 'unique-local';
-  if ((groups[0] & 0xffc0) === 0xfe80) return 'link-local';
-  if ((groups[0] & 0xff00) === 0xff00) return 'multicast';
-  return '';
+function blockedIpv6Reason(e) {
+  var r,
+    t,
+    i = !1;
+  for (r = 0; r < 8; r++) 0 !== e[r] && (i = !0);
+  return i
+    ? allZero(e, 7) && 1 === e[7]
+      ? "loopback"
+      : allZero(e, 5) && 65535 === e[5]
+        ? (t = blockedIpv4Reason(embeddedIpv4(e)))
+          ? "ipv4-mapped-" + t
+          : ""
+        : allZero(e, 6)
+          ? "ipv4-compatible"
+          : 100 === e[0] && 65435 === e[1] && allZero(e.slice(2), 4)
+            ? (t = blockedIpv4Reason(embeddedIpv4(e)))
+              ? "nat64-" + t
+              : ""
+            : 8194 === e[0]
+              ? (t = blockedIpv4Reason([
+                  e[1] >> 8,
+                  255 & e[1],
+                  e[2] >> 8,
+                  255 & e[2],
+                ]))
+                ? "6to4-" + t
+                : ""
+              : 256 === e[0] && allZero(e.slice(1), 3)
+                ? "discard"
+                : 8193 === e[0] && 3512 === e[1]
+                  ? "documentation"
+                  : 8193 === e[0] && 0 === e[1]
+                    ? "teredo"
+                    : 64512 == (65024 & e[0])
+                      ? "unique-local"
+                      : 65152 == (65472 & e[0])
+                        ? "link-local"
+                        : 65280 == (65280 & e[0])
+                          ? "multicast"
+                          : ""
+    : "unspecified";
 }
-
-/* Classify a literal address string. Throws when the address is disallowed. */
-function assertAddressAllowed(address, family) {
-  var octets, groups, reason;
-  if (family === 4 || parseIpv4(address)) {
-    octets = parseIpv4(address);
-    if (!octets) throw err('BLOCKED_ADDRESS', 'malformed ipv4');
-    reason = blockedIpv4Reason(octets);
-    if (reason) throw err('BLOCKED_ADDRESS', reason);
-    return;
-  }
-  groups = parseIpv6(address);
-  if (!groups) throw err('BLOCKED_ADDRESS', 'malformed address');
-  reason = blockedIpv6Reason(groups);
-  if (reason) throw err('BLOCKED_ADDRESS', reason);
-}
-
-function isAddressAllowed(address, family) {
-  try { assertAddressAllowed(address, family); return true; } catch (e) { return false; }
-}
-
-/* Hostname policy applied before any DNS lookup happens. */
-function assertHostnameAllowed(hostname) {
-  var host = String(hostname || '').toLowerCase().replace(/\.$/, '');
-  var i;
-  if (!host) throw err('INVALID_URL', 'empty host');
-  if (BLOCKED_HOST_EXACT[host]) throw err('BLOCKED_ADDRESS', 'local hostname');
-  for (i = 0; i < BLOCKED_HOST_SUFFIXES.length; i++) {
-    if (host.length > BLOCKED_HOST_SUFFIXES[i].length &&
-        host.slice(-BLOCKED_HOST_SUFFIXES[i].length) === BLOCKED_HOST_SUFFIXES[i]) {
-      throw err('BLOCKED_ADDRESS', 'local hostname');
-    }
-  }
-  /* A literal address in the host position is judged directly. */
-  if (parseIpv4(host) || host.indexOf(':') >= 0) { assertAddressAllowed(host); return host; }
-  /* Single-label names resolve through local search domains. */
-  if (host.indexOf('.') < 0) throw err('BLOCKED_ADDRESS', 'single-label hostname');
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host)) {
-    throw err('INVALID_URL', 'malformed hostname');
-  }
-  return host;
-}
-
-/* Strict URL policy. Returns the pieces the HTTP client needs. */
-function assertUrlAllowed(rawUrl) {
-  var text = String(rawUrl || '').trim();
-  var m, scheme, authority, rest, hostPart, portPart, host, port, idx;
-
-  if (!text) throw err('INVALID_URL', 'empty url');
-  if (text.length > 2048) throw err('INVALID_URL', 'url too long');
-  /* Control characters and whitespace enable request smuggling tricks. */
-  if (/[\u0000-\u0020\u007f]/.test(text)) throw err('INVALID_URL', 'illegal character');
-
-  m = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)([\s\S]*)$/.exec(text);
-  if (!m) throw err('INVALID_URL', 'malformed url');
-  scheme = m[1].toLowerCase();
-  authority = m[2];
-  rest = m[3] || '';
-
-  if (scheme !== 'http' && scheme !== 'https') throw err('BLOCKED_SCHEME', scheme);
-  /* Credentials in the URL would be forwarded to whatever we resolve to. */
-  if (authority.indexOf('@') >= 0) throw err('URL_CREDENTIALS_REJECTED', 'credentials in url');
-  if (!authority) throw err('INVALID_URL', 'missing host');
-
-  if (authority.charAt(0) === '[') {
-    idx = authority.indexOf(']');
-    if (idx < 0) throw err('INVALID_URL', 'malformed ipv6 literal');
-    hostPart = authority.slice(1, idx);
-    portPart = authority.slice(idx + 1);
-    if (portPart && portPart.charAt(0) !== ':') throw err('INVALID_URL', 'malformed port');
-    portPart = portPart ? portPart.slice(1) : '';
-    if (!parseIpv6(hostPart)) throw err('INVALID_URL', 'malformed ipv6 literal');
+function assertAddressAllowed(e, r) {
+  var t, i, n;
+  if (4 === r || parseIpv4(e)) {
+    if (!(t = parseIpv4(e))) throw err("BLOCKED_ADDRESS", "malformed ipv4");
+    if ((n = blockedIpv4Reason(t))) throw err("BLOCKED_ADDRESS", n);
   } else {
-    idx = authority.lastIndexOf(':');
-    if (idx >= 0 && authority.indexOf(':') === idx) {
-      hostPart = authority.slice(0, idx);
-      portPart = authority.slice(idx + 1);
-    } else if (idx >= 0) {
-      throw err('INVALID_URL', 'ambiguous authority');
-    } else {
-      hostPart = authority;
-      portPart = '';
-    }
+    if (!(i = parseIpv6(e))) throw err("BLOCKED_ADDRESS", "malformed address");
+    if ((n = blockedIpv6Reason(i))) throw err("BLOCKED_ADDRESS", n);
   }
-
-  if (portPart !== '') {
-    if (!/^\d{1,5}$/.test(portPart)) throw err('INVALID_URL', 'malformed port');
-    port = parseInt(portPart, 10);
-    if (port < 1 || port > 65535) throw err('INVALID_URL', 'port out of range');
-  } else {
-    port = scheme === 'https' ? 443 : 80;
+}
+function isAddressAllowed(e, r) {
+  try {
+    return (assertAddressAllowed(e, r), !0);
+  } catch (e) {
+    return !1;
   }
-
-  host = assertHostnameAllowed(hostPart);
+}
+function assertHostnameAllowed(e) {
+  var r,
+    t = String(e || "")
+      .toLowerCase()
+      .replace(/\.$/, "");
+  if (!t) throw err("INVALID_URL", "empty host");
+  if (BLOCKED_HOST_EXACT[t]) throw err("BLOCKED_ADDRESS", "local hostname");
+  for (r = 0; r < BLOCKED_HOST_SUFFIXES.length; r++)
+    if (
+      t.length > BLOCKED_HOST_SUFFIXES[r].length &&
+      t.slice(-BLOCKED_HOST_SUFFIXES[r].length) === BLOCKED_HOST_SUFFIXES[r]
+    )
+      throw err("BLOCKED_ADDRESS", "local hostname");
+  if (parseIpv4(t) || t.indexOf(":") >= 0) return (assertAddressAllowed(t), t);
+  if (t.indexOf(".") < 0) throw err("BLOCKED_ADDRESS", "single-label hostname");
+  if (
+    !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(t)
+  )
+    throw err("INVALID_URL", "malformed hostname");
+  return t;
+}
+function assertUrlAllowed(e) {
+  var r,
+    t,
+    i,
+    n,
+    l,
+    o,
+    s,
+    a,
+    d,
+    f = String(e || "").trim();
+  if (!f) throw err("INVALID_URL", "empty url");
+  if (f.length > 2048) throw err("INVALID_URL", "url too long");
+  if (/[\u0000-\u0020\u007f]/.test(f))
+    throw err("INVALID_URL", "illegal character");
+  if (!(r = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)([\s\S]*)$/.exec(f)))
+    throw err("INVALID_URL", "malformed url");
+  if (
+    ((t = r[1].toLowerCase()),
+    (i = r[2]),
+    (n = r[3] || ""),
+    "http" !== t && "https" !== t)
+  )
+    throw err("BLOCKED_SCHEME", t);
+  if (i.indexOf("@") >= 0)
+    throw err("URL_CREDENTIALS_REJECTED", "credentials in url");
+  if (!i) throw err("INVALID_URL", "missing host");
+  if ("[" === i.charAt(0)) {
+    if ((d = i.indexOf("]")) < 0)
+      throw err("INVALID_URL", "malformed ipv6 literal");
+    if (((l = i.slice(1, d)), (o = i.slice(d + 1)) && ":" !== o.charAt(0)))
+      throw err("INVALID_URL", "malformed port");
+    if (((o = o ? o.slice(1) : ""), !parseIpv6(l)))
+      throw err("INVALID_URL", "malformed ipv6 literal");
+  } else if ((d = i.lastIndexOf(":")) >= 0 && i.indexOf(":") === d)
+    ((l = i.slice(0, d)), (o = i.slice(d + 1)));
+  else {
+    if (d >= 0) throw err("INVALID_URL", "ambiguous authority");
+    ((l = i), (o = ""));
+  }
+  if ("" !== o) {
+    if (!/^\d{1,5}$/.test(o)) throw err("INVALID_URL", "malformed port");
+    if ((a = parseInt(o, 10)) < 1 || a > 65535)
+      throw err("INVALID_URL", "port out of range");
+  } else a = "https" === t ? 443 : 80;
   return {
-    scheme: scheme,
-    hostname: host,
-    port: port,
-    path: rest || '/',
-    origin: scheme + '://' + host + ':' + port,
-    isLiteralAddress: !!(parseIpv4(host) || host.indexOf(':') >= 0)
+    scheme: t,
+    hostname: (s = assertHostnameAllowed(l)),
+    port: a,
+    path: n || "/",
+    origin: t + "://" + s + ":" + a,
+    isLiteralAddress: !!(parseIpv4(s) || s.indexOf(":") >= 0),
   };
 }
-
-/* Every resolved address must pass, so a name with one private answer among
-   public ones cannot be used to reach the LAN. */
-function assertResolvedAddresses(addresses) {
-  var i, entry;
-  if (!addresses || !addresses.length) throw err('DNS_FAILED', 'no addresses');
-  for (i = 0; i < addresses.length; i++) {
-    entry = addresses[i];
-    assertAddressAllowed(entry.address, entry.family);
-  }
-  return addresses;
+function assertResolvedAddresses(e) {
+  var r, t;
+  if (!e || !e.length) throw err("DNS_FAILED", "no addresses");
+  for (r = 0; r < e.length; r++)
+    assertAddressAllowed((t = e[r]).address, t.family);
+  return e;
 }
-
-function sameOrigin(a, b) {
-  return !!a && !!b && a.origin === b.origin;
+function sameOrigin(e, r) {
+  return !!e && !!r && e.origin === r.origin;
 }
-
-/* Drop credential-bearing headers when a redirect changes origin. */
-function stripSensitiveHeaders(headers) {
-  var out = {}, key, lower, i, blocked = {};
-  for (i = 0; i < SENSITIVE_HEADERS.length; i++) blocked[SENSITIVE_HEADERS[i]] = 1;
-  for (key in headers) {
-    if (!Object.prototype.hasOwnProperty.call(headers, key)) continue;
-    lower = String(key).toLowerCase();
-    if (blocked[lower] || lower.indexOf('x-device-') === 0) continue;
-    out[key] = headers[key];
-  }
-  return out;
+function stripSensitiveHeaders(e) {
+  var r,
+    t,
+    i,
+    n = {},
+    l = {};
+  for (i = 0; i < SENSITIVE_HEADERS.length; i++) l[SENSITIVE_HEADERS[i]] = 1;
+  for (r in e)
+    Object.prototype.hasOwnProperty.call(e, r) &&
+      (l[(t = String(r).toLowerCase())] ||
+        0 === t.indexOf("x-device-") ||
+        (n[r] = e[r]));
+  return n;
 }
-
 module.exports = {
   MAX_REDIRECTS: MAX_REDIRECTS,
   SENSITIVE_HEADERS: SENSITIVE_HEADERS,
@@ -319,5 +309,5 @@ module.exports = {
   assertUrlAllowed: assertUrlAllowed,
   assertResolvedAddresses: assertResolvedAddresses,
   sameOrigin: sameOrigin,
-  stripSensitiveHeaders: stripSensitiveHeaders
+  stripSensitiveHeaders: stripSensitiveHeaders,
 };

@@ -1,477 +1,668 @@
-'use strict';
-
-/* Hardened HTTP client for subscription downloads.
-
-   Security properties, all enforced here rather than by callers:
-
-   - only http/https, validated by the SSRF policy before every connection;
-   - names are resolved once, every answer is checked, and the connection is
-     pinned to a validated address while TLS still verifies the original
-     hostname (this is what closes DNS rebinding);
-   - certificate validation is never disabled and there is no insecure retry:
-     a TLS failure returns TLS_CERTIFICATE_INVALID to the UI;
-   - redirects are re-validated with the same rules, counted, and credential
-     bearing headers are dropped when the origin changes;
-   - connect, read and total deadlines, plus header, body and decompressed
-     size caps, bound every request. */
-
-var http = require('http');
-var https = require('https');
-var zlib = require('zlib');
-var fs = require('fs');
-var path = require('path');
-var url = require('url');
-var dnsResolver = require('./dns-resolver');
-var ssrf = require('./ssrf');
-var errors = require('../errors');
-var err = errors.err;
-
-var CONNECT_TIMEOUT_MS = 10000;
-var READ_TIMEOUT_MS = 15000;
-var TOTAL_TIMEOUT_MS = 45000;
-var MAX_HEADER_BYTES = 32 * 1024;
-var MAX_BODY_BYTES = 2 * 1024 * 1024;
-var MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024;
-var MAX_CONCURRENT = 4;
-var COMPAT_ECDH_CURVES = 'prime256v1:secp384r1:secp521r1';
-var activeRequests = 0;
-var requestQueue = [];
-var bundledCa = null;
-
-/* webOS 4 ships an old Node trust store which no longer validates many
-   otherwise-correct modern certificate chains.  Use the packaged Mozilla CA
-   bundle while keeping normal hostname and certificate verification enabled. */
+"use strict";
+var http = require("http"),
+  https = require("https"),
+  zlib = require("zlib"),
+  fs = require("fs"),
+  path = require("path"),
+  url = require("url"),
+  dnsResolver = require("./dns-resolver"),
+  ssrf = require("./ssrf"),
+  errors = require("../errors"),
+  err = errors.err,
+  CONNECT_TIMEOUT_MS = 1e4,
+  READ_TIMEOUT_MS = 15e3,
+  TOTAL_TIMEOUT_MS = 45e3,
+  MAX_HEADER_BYTES = 32768,
+  MAX_BODY_BYTES = 2097152,
+  MAX_DECOMPRESSED_BYTES = 8388608,
+  MAX_CONCURRENT = 4,
+  MAX_COOKIE_COUNT = 16,
+  MAX_COOKIE_BYTES = 16384,
+  COMPAT_ECDH_CURVES = "prime256v1:secp384r1:secp521r1",
+  activeRequests = 0,
+  requestQueue = [],
+  bundledCa = null;
 function loadBundledCa() {
-  if (bundledCa !== null) return bundledCa || null;
+  if (null !== bundledCa) return bundledCa || null;
   try {
-    /* Node 0.12 requires `ca` as an array; a concatenated PEM string is
-       treated as one certificate and yields CERT_UNTRUSTED. */
-    bundledCa = fs.readFileSync(path.join(__dirname, '..', '..', 'certs', 'cacert.pem'), 'utf8')
-      .match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+    bundledCa =
+      fs
+        .readFileSync(
+          path.join(__dirname, "..", "..", "certs", "cacert.pem"),
+          "utf8",
+        )
+        .match(
+          /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g,
+        ) || [];
   } catch (e) {
     bundledCa = [];
   }
   return bundledCa.length ? bundledCa : null;
 }
-
-function isTlsError(error) {
-  var code = String((error && (error.code || error.errno)) || '');
-  var message = String((error && error.message) || '').toLowerCase();
-  if (code.indexOf('CERT') >= 0 || code.indexOf('SSL') >= 0) return true;
-  if (code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') return true;
-  if (code === 'DEPTH_ZERO_SELF_SIGNED_CERT' || code === 'SELF_SIGNED_CERT_IN_CHAIN') return true;
-  if (code === 'ERR_TLS_CERT_ALTNAME_INVALID') return true;
-  return message.indexOf('certificate') >= 0 || message.indexOf('issuer') >= 0 || message.indexOf('altname') >= 0;
+function isTlsError(e) {
+  var r = String((e && (e.code || e.errno)) || ""),
+    t = String((e && e.message) || "").toLowerCase();
+  return (
+    r.indexOf("CERT") >= 0 ||
+    r.indexOf("SSL") >= 0 ||
+    "UNABLE_TO_GET_ISSUER_CERT_LOCALLY" === r ||
+    "UNABLE_TO_VERIFY_LEAF_SIGNATURE" === r ||
+    "DEPTH_ZERO_SELF_SIGNED_CERT" === r ||
+    "SELF_SIGNED_CERT_IN_CHAIN" === r ||
+    "ERR_TLS_CERT_ALTNAME_INVALID" === r ||
+    t.indexOf("certificate") >= 0 ||
+    t.indexOf("issuer") >= 0 ||
+    t.indexOf("altname") >= 0
+  );
 }
-
-/* Some webOS 5.x vendor Node builds advertise only P-256 even though their
-   OpenSSL supports P-384 and P-521. ECDSA providers using P-384 then reject
-   the ClientHello before sending a certificate. Node 0.12/OpenSSL 1.0.1 does
-   not support curve-list syntax and already advertises a broad default, so it
-   must retain that runtime default. */
 function compatibleEcdhCurves() {
-  var major = parseInt(String(
-    process && process.versions && process.versions.node || '0'
-  ).split('.')[0], 10);
-  return major >= 4 ? COMPAT_ECDH_CURVES : null;
+  return parseInt(
+    String((process && process.versions && process.versions.node) || "0").split(
+      ".",
+    )[0],
+    10,
+  ) >= 4
+    ? COMPAT_ECDH_CURVES
+    : null;
 }
-
-/* Resolve a hostname to addresses that all pass the SSRF policy. */
-function resolveValidated(hostname, callback) {
-  var literal = ssrf.parseIpv4(hostname) ? 4 : (hostname.indexOf(':') >= 0 ? 6 : 0);
-  if (literal) {
+function resolveValidated(e, r, t) {
+  "function" == typeof r && ((t = r), (r = Date.now() + TOTAL_TIMEOUT_MS));
+  var n = ssrf.parseIpv4(e) ? 4 : e.indexOf(":") >= 0 ? 6 : 0;
+  if (n) {
     try {
-      ssrf.assertAddressAllowed(hostname, literal);
+      ssrf.assertAddressAllowed(e, n);
     } catch (e) {
-      return callback(e);
+      return t(e);
     }
-    return callback(null, [{ address: hostname, family: literal }]);
+    return t(null, [{ address: e, family: n }]);
   }
-  /* Resolve every A and AAAA answer.  The helper deliberately avoids the
-     dns.lookup({all:true}) API missing from the Node 0.12 runtime on webOS 4. */
-  dnsResolver.resolveAll(hostname, function (lookupError, addresses) {
-    if (lookupError || !addresses || !addresses.length) return callback(err('DNS_FAILED', 'lookup failed'));
+  dnsResolver.resolveForConnection(e, r, function (e, r) {
+    if (e || !r || !r.length)
+      return t(
+        err(
+          e && "TIMEOUT" === e.code ? "TIMEOUT" : "DNS_FAILED",
+          e && "TIMEOUT" === e.code ? "dns deadline exceeded" : "lookup failed",
+        ),
+      );
     try {
-      ssrf.assertResolvedAddresses(addresses);
-    } catch (policyError) {
-      return callback(policyError);
+      ssrf.assertResolvedAddresses(r);
+    } catch (e) {
+      return t(e);
     }
-    callback(null, addresses);
+    t(null, r);
   });
 }
-
-function decodeBody(buffer, encoding, callback) {
-  var normalized = String(encoding || '').toLowerCase();
-  var decoder, chunks, size, settled;
-
-  function decodeWith(createDecoder) {
-    chunks = [];
-    size = 0;
-    settled = false;
+function decodeBody(e, r, t) {
+  var n,
+    o,
+    s,
+    i,
+    a = String(r || "").toLowerCase();
+  function c(r) {
+    ((o = []), (s = 0), (i = !1));
     try {
-      decoder = createDecoder();
-    } catch (createError) {
-      return callback(err('NETWORK_ERROR', 'malformed compressed response'));
+      n = r();
+    } catch (e) {
+      return t(err("NETWORK_ERROR", "malformed compressed response"));
     }
-    decoder.on('data', function (chunk) {
-      if (settled) return;
-      size += chunk.length;
-      if (size > MAX_DECOMPRESSED_BYTES) {
-        settled = true;
-        chunks = [];
-        try { decoder.destroy(); } catch (e) {}
-        callback(err('DECOMPRESSED_TOO_LARGE', 'response too large'));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    decoder.on('error', function () {
-      if (settled) return;
-      settled = true;
-      chunks = [];
-      callback(err('NETWORK_ERROR', 'malformed compressed response'));
-    });
-    decoder.on('end', function () {
-      if (settled) return;
-      settled = true;
-      callback(null, Buffer.concat(chunks, size).toString('utf8'));
-    });
-    decoder.end(buffer);
+    (n.on("data", function (e) {
+      if (!i)
+        if ((s += e.length) > MAX_DECOMPRESSED_BYTES) {
+          ((i = !0), (o = []));
+          try {
+            n.destroy();
+          } catch (e) {}
+          t(err("DECOMPRESSED_TOO_LARGE", "response too large"));
+        } else o.push(e);
+    }),
+      n.on("error", function () {
+        i ||
+          ((i = !0),
+          (o = []),
+          t(err("NETWORK_ERROR", "malformed compressed response")));
+      }),
+      n.on("end", function () {
+        i || ((i = !0), t(null, Buffer.concat(o, s).toString("utf8")));
+      }),
+      n.end(e));
   }
-
-  if (normalized === 'gzip') return decodeWith(function () { return zlib.createGunzip(); });
-  if (normalized === 'deflate') return decodeWith(function () { return zlib.createInflate(); });
-  if (buffer.length > MAX_DECOMPRESSED_BYTES) return callback(err('DECOMPRESSED_TOO_LARGE', 'response too large'));
-  callback(null, buffer.toString('utf8'));
+  return "gzip" === a
+    ? c(function () {
+        return zlib.createGunzip();
+      })
+    : "deflate" === a
+      ? c(function () {
+          return zlib.createInflate();
+        })
+      : e.length > MAX_DECOMPRESSED_BYTES
+        ? t(err("DECOMPRESSED_TOO_LARGE", "response too large"))
+        : void t(null, e.toString("utf8"));
 }
-
-function targetUrl(target) {
-  var host = target.hostname.indexOf(':') >= 0
-    ? '[' + target.hostname + ']'
-    : target.hostname;
-  return target.scheme + '://' + host + ':' + target.port + target.path;
+function targetUrl(e) {
+  var r = e.hostname.indexOf(":") >= 0 ? "[" + e.hostname + "]" : e.hostname;
+  return e.scheme + "://" + r + ":" + e.port + e.path;
 }
-
-/* Diagnostics only: security decisions continue to use ssrf.assertUrlAllowed.
-   Legacy url.parse is available on Node 0.12 and lets a rejected redirect
-   report whether its scheme/host/effective-port differed without retaining any
-   destination text. */
-function redirectOriginChanged(current, resolved) {
-  var parsed;
-  var scheme;
-  var hostname;
-  var port;
+function redirectOriginChanged(e, r) {
+  var t, n, o, s;
   try {
-    parsed = url.parse(resolved);
-    scheme = String(parsed.protocol || '').replace(/:$/, '').toLowerCase();
-    hostname = String(parsed.hostname || '').toLowerCase();
-    port = parsed.port ? parseInt(parsed.port, 10) : (scheme === 'https' ? 443 : 80);
-    return current.origin !== scheme + '://' + hostname + ':' + port;
+    return (
+      (t = url.parse(r)),
+      (n = String(t.protocol || "")
+        .replace(/:$/, "")
+        .toLowerCase()),
+      (o = String(t.hostname || "").toLowerCase()),
+      (s = t.port ? parseInt(t.port, 10) : "https" === n ? 443 : 80),
+      e.origin !== n + "://" + o + ":" + s
+    );
   } catch (e) {
-    return false;
+    return !1;
   }
 }
-
-/* Resolve one Location value using Node's legacy URL implementation (present
-   on webOS Node 0.12), validate it immediately, and prohibit transport
-   downgrade before another request is attempted. fetchUrlNow validates the
-   same URL again and performs fresh DNS/address checks for the new hop. */
-function redirectUrl(current, location) {
-  var next = url.resolve(targetUrl(current), String(location || ''));
-  var target;
+function redirectUrl(e, r) {
+  var t,
+    n = url.resolve(targetUrl(e), String(r || ""));
   try {
-    target = ssrf.assertUrlAllowed(next);
-  } catch (policyError) {
+    t = ssrf.assertUrlAllowed(n);
+  } catch (r) {
     throw err(
-      errors.isAlcyoneError(policyError) ? policyError.code : 'INVALID_URL',
-      errors.isAlcyoneError(policyError) ? policyError.detail : 'invalid redirect',
+      errors.isAlcyoneError(r) ? r.code : "INVALID_URL",
+      errors.isAlcyoneError(r) ? r.detail : "invalid redirect",
       {
-        stage: 'redirect',
-        protocol: protocolHint(next),
-        originChanged: redirectOriginChanged(current, next)
-      }
+        stage: "redirect",
+        protocol: protocolHint(n),
+        originChanged: redirectOriginChanged(e, n),
+      },
     );
   }
-  if (current.scheme === 'https' && target.scheme === 'http') {
-    throw err('HTTPS_DOWNGRADE_REJECTED', 'https redirect downgrade', {
-      stage: 'redirect',
-      protocol: target.scheme,
-      originChanged: !ssrf.sameOrigin(current, target)
+  if ("https" === e.scheme && "http" === t.scheme)
+    throw err("HTTPS_DOWNGRADE_REJECTED", "https redirect downgrade", {
+      stage: "redirect",
+      protocol: t.scheme,
+      originChanged: !ssrf.sameOrigin(e, t),
     });
+  return n;
+}
+function sameRequestTarget(e, r) {
+  var t;
+  try {
+    t = ssrf.assertUrlAllowed(r);
+    return e.origin === t.origin && e.path === t.path;
+  } catch (e) {
+    return !1;
   }
-  return next;
 }
-
-/* Safe, deliberately tiny request diagnostics. These values may be returned to
-   the authenticated importer and written to the service log, so they never
-   contain a URL component, hostname, header, body or provider identifier. */
-function protocolHint(rawUrl) {
-  var match = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(String(rawUrl || ''));
-  var protocol = match ? match[1].toLowerCase() : '';
-  return protocol === 'http' || protocol === 'https' ? protocol : 'unknown';
+function createCookieJar() {
+  return { cookies: [] };
 }
-
-function safeDiagnosticToken(value, fallback) {
-  value = String(value || '');
-  return /^[A-Za-z0-9_.-]{1,64}$/.test(value) ? value : fallback;
+function cookieDefaultPath(e) {
+  var r = String((e && e.path) || "/"),
+    t = r.lastIndexOf("/");
+  return t <= 0 ? "/" : r.slice(0, t);
 }
-
-function transportDiagnostic(error, tlsPhase) {
+function cookieState(e, r) {
+  var t,
+    n = [];
+  if (!e || !e.cookies || !r) return "";
+  for (t = 0; t < e.cookies.length; t++)
+    e.cookies[t].origin === r.origin && n.push(
+      e.cookies[t].name + "=" + e.cookies[t].value + ";" + e.cookies[t].path,
+    );
+  return n.sort().join("|");
+}
+function cookiePathMatches(e, r) {
+  return "/" === e || e === r || (0 === r.indexOf(e) && "/" === r.charAt(e.length));
+}
+function cookieHeader(e, r) {
+  var t,
+    n = [],
+    o = String((r && r.path) || "/");
+  if (!e || !e.cookies || !r) return "";
+  for (t = 0; t < e.cookies.length; t++)
+    if (
+      e.cookies[t].origin === r.origin &&
+      (!e.cookies[t].secure || "https" === r.scheme) &&
+      cookiePathMatches(e.cookies[t].path, o)
+    )
+      n.push(e.cookies[t].name + "=" + e.cookies[t].value);
+  return n.join("; ");
+}
+function cookieBytes(e) {
+  var r,
+    t = 0;
+  for (r = 0; r < e.cookies.length; r++)
+    t += Buffer.byteLength(
+      e.cookies[r].name + "=" + e.cookies[r].value + e.cookies[r].path,
+      "utf8",
+    );
+  return t;
+}
+function storeSetCookie(e, r, t) {
+  var n,
+    o,
+    s,
+    i,
+    a,
+    c,
+    d,
+    u,
+    l,
+    h,
+    O,
+    R,
+    T,
+    f,
+    p,
+    oldCookie,
+    _ = String(t || "").split(";"),
+    m = String(_[0] || "").trim(),
+    g = m.indexOf("=");
+  if (!e || !r || g <= 0) return !1;
+  if (
+    ((n = m.slice(0, g).trim()),
+    (o = m.slice(g + 1).trim()),
+    !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(n) ||
+      /[\u0000-\u001f\u007f]/.test(o) ||
+      Buffer.byteLength(n + "=" + o, "utf8") > MAX_COOKIE_BYTES)
+  )
+    return !1;
+  ((s = cookieDefaultPath(r)),
+    (i = !1),
+    (a = !1),
+    (c = null),
+    (d = 1 / 0));
+  for (u = 1; u < _.length; u++)
+    if (((l = String(_[u] || "").trim()), l)) {
+      var v = l.indexOf("="),
+        y = (v < 0 ? l : l.slice(0, v)).trim().toLowerCase(),
+        b = v < 0 ? "" : l.slice(v + 1).trim();
+      "path" === y && b && (s = b.charAt(0) === "/" ? b : "/"),
+        "secure" === y && (i = !0),
+        "max-age" === y &&
+          ((T = parseInt(b, 10)), isFinite(T) && (d = T)),
+        "expires" === y &&
+          ((R = Date.parse(b)), isNaN(R) || (c = R));
+    }
+  if (i && "https" !== r.scheme) return !1;
+  if (d <= 0 || (null !== c && c <= Date.now())) {
+    for (f = e.cookies.length - 1; f >= 0; f--)
+      e.cookies[f].origin === r.origin &&
+        e.cookies[f].name === n &&
+        e.cookies[f].path === s &&
+        e.cookies.splice(f, 1);
+    return !0;
+  }
+  ((p = {
+    name: n,
+    value: o,
+    path: s,
+    secure: i,
+    origin: r.origin,
+  }),
+    (h = -1));
+  for (f = 0; f < e.cookies.length; f++)
+    e.cookies[f].origin === r.origin &&
+      e.cookies[f].name === n &&
+      e.cookies[f].path === s &&
+      (h = f);
+  oldCookie = h >= 0 ? e.cookies[h] : null;
+  if (h >= 0) e.cookies[h] = p;
+  else {
+    if (e.cookies.length >= MAX_COOKIE_COUNT) return !1;
+    e.cookies.push(p);
+  }
+  return cookieBytes(e) <= MAX_COOKIE_BYTES
+    ? !0
+    : (h >= 0 ? (e.cookies[h] = oldCookie) : e.cookies.pop(), !1);
+}
+function storeSetCookies(e, r, t) {
+  var n,
+    o = !1,
+    s = (t && t["set-cookie"]) || [];
+  "string" == typeof s && (s = [s]);
+  for (n = 0; n < s.length; n++) storeSetCookie(e, r, s[n]) && (o = !0);
+  return o;
+}
+function removeHeader(e, r) {
+  var t, n = String(r || "").toLowerCase();
+  for (t in e)
+    Object.prototype.hasOwnProperty.call(e, t) &&
+      String(t).toLowerCase() === n &&
+      delete e[t];
+  return e;
+}
+function copyHeaders(e) {
+  var r, t = {};
+  for (r in e)
+    Object.prototype.hasOwnProperty.call(e, r) && (t[r] = e[r]);
+  return t;
+}
+function protocolHint(e) {
+  var r = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(String(e || "")),
+    t = r ? r[1].toLowerCase() : "";
+  return "http" === t || "https" === t ? t : "unknown";
+}
+function safeDiagnosticToken(e, r) {
+  return ((e = String(e || "")), /^[A-Za-z0-9_.-]{1,64}$/.test(e) ? e : r);
+}
+function transportDiagnostic(e, r) {
   return {
     transportErrorCode: safeDiagnosticToken(
-      error && (error.code || error.errno),
-      'UNKNOWN'
+      e && (e.code || e.errno),
+      "UNKNOWN",
     ),
-    transportErrorName: safeDiagnosticToken(error && error.name, 'Error'),
-    tlsPhase: safeDiagnosticToken(tlsPhase, 'unknown')
+    transportErrorName: safeDiagnosticToken(e && e.name, "Error"),
+    tlsPhase: safeDiagnosticToken(r, "unknown"),
   };
 }
-
-function requestError(error, stage, hop, protocol, originChanged, extra) {
-  var code = errors.isAlcyoneError(error) ? error.code : 'NETWORK_ERROR';
-  var detail = errors.isAlcyoneError(error)
-    ? error.detail
-    : String((error && error.code) || 'request failed');
-  var prior = (error && error.meta) || {};
-  var meta = {
-    stage: String(prior.stage || stage || 'unknown'),
-    redirectHop: typeof prior.redirectHop === 'number' ? prior.redirectHop : hop,
-    protocol: String(prior.protocol || protocol || 'unknown'),
-    originChanged: prior.originChanged === true || !!originChanged
-  };
-  if ((prior.nested === true) || (extra && extra.nested === true)) meta.nested = true;
-  if (prior.transportErrorCode) {
-    meta.transportErrorCode = safeDiagnosticToken(prior.transportErrorCode, 'UNKNOWN');
-  }
-  if (prior.transportErrorName) {
-    meta.transportErrorName = safeDiagnosticToken(prior.transportErrorName, 'Error');
-  }
-  if (prior.tlsPhase) meta.tlsPhase = safeDiagnosticToken(prior.tlsPhase, 'unknown');
-  return err(code, detail, meta);
-}
-
-/* Perform a single validated request, following redirects manually. */
-function fetchUrlNow(rawUrl, options, callback) {
-  options = options || {};
-  var deadline = options.deadline || (Date.now() + TOTAL_TIMEOUT_MS);
-  var redirects = options.redirects || 0;
-  var headers = options.headers || {};
-  var previous = options.previousTarget || null;
-  var settled = false;
-  var totalTimer = null;
-  var target;
-  var protocol = protocolHint(rawUrl);
-  var originChanged = false;
-  var stage = 'url-validation';
-  var responseStarted = false;
-  var tlsPhase = 'not-applicable';
-
-  function done(error, body, responseHeaders) {
-    if (settled) return;
-    settled = true;
-    if (totalTimer) {
-      clearTimeout(totalTimer);
-      totalTimer = null;
-    }
-    callback(error
-      ? requestError(error, stage, redirects, protocol, originChanged)
-      : null, body, responseHeaders);
-  }
-
-  if (Date.now() >= deadline) return done(err('TIMEOUT', 'deadline exceeded'));
-  if (redirects > ssrf.MAX_REDIRECTS) return done(err('TOO_MANY_REDIRECTS', String(redirects)));
-
-  try {
-    target = ssrf.assertUrlAllowed(rawUrl);
-  } catch (policyError) {
-    return done(policyError);
-  }
-  protocol = target.scheme;
-  originChanged = !!previous && !ssrf.sameOrigin(previous, target);
-
-  /* Any change of origin drops credential-bearing headers. */
-  if (originChanged) headers = ssrf.stripSensitiveHeaders(headers);
-
-  stage = 'dns-validation';
-  resolveValidated(target.hostname, function (resolveError, addresses) {
-    if (resolveError) return done(resolveError);
-
-    var pinned = addresses[0];
-    var isHttps = target.scheme === 'https';
-    var mod = isHttps ? https : http;
-    var requestHeaders = {};
-    var key, request;
-
-    for (key in headers) {
-      if (Object.prototype.hasOwnProperty.call(headers, key)) requestHeaders[key] = headers[key];
-    }
-    requestHeaders.Host = target.hostname;
-    requestHeaders['Accept-Encoding'] = 'gzip, deflate';
-    requestHeaders.Connection = 'close';
-
-    var requestOptions = {
-      /* Connect to the address we validated, not to a name the resolver may
-         answer differently a second time. */
-      host: pinned.address,
-      port: target.port,
-      path: target.path,
-      method: 'GET',
-      headers: requestHeaders,
-      /* TLS still verifies the real hostname against the certificate. */
-      servername: isHttps ? target.hostname : undefined,
-      rejectUnauthorized: true,
-      agent: false,
-      maxHeaderSize: MAX_HEADER_BYTES
+function requestError(e, r, t, n, o, s) {
+  var i = errors.isAlcyoneError(e) ? e.code : "NETWORK_ERROR",
+    a = errors.isAlcyoneError(e)
+      ? e.detail
+      : String((e && e.code) || "request failed"),
+    c = (e && e.meta) || {},
+    d = {
+      stage: String(c.stage || r || "unknown"),
+      redirectHop: "number" == typeof c.redirectHop ? c.redirectHop : t,
+      protocol: String(c.protocol || n || "unknown"),
+      originChanged: !0 === c.originChanged || !!o,
     };
-    if (isHttps && loadBundledCa()) requestOptions.ca = bundledCa;
-    if (isHttps && compatibleEcdhCurves()) {
-      requestOptions.ecdhCurve = compatibleEcdhCurves();
+  return (
+    (!0 === c.nested || (s && !0 === s.nested)) && (d.nested = !0),
+    c.transportErrorCode &&
+      (d.transportErrorCode = safeDiagnosticToken(
+        c.transportErrorCode,
+        "UNKNOWN",
+      )),
+    c.transportErrorName &&
+      (d.transportErrorName = safeDiagnosticToken(
+        c.transportErrorName,
+        "Error",
+      )),
+    c.tlsPhase && (d.tlsPhase = safeDiagnosticToken(c.tlsPhase, "unknown")),
+    "number" == typeof c.status &&
+      c.status >= 100 &&
+      c.status <= 599 &&
+      (d.status = c.status),
+    err(i, a, d)
+  );
+}
+function fetchUrlNow(e, r, t) {
+  var n,
+    o = (r = r || {}).deadline || Date.now() + TOTAL_TIMEOUT_MS,
+    s = r.redirects || 0,
+    i = copyHeaders(r.headers || {}),
+    a = r.previousTarget || null,
+    jar = r.cookieJar || createCookieJar(),
+    seen = r.redirectStates || {},
+    session = r.session || { agent: null, closed: !1 },
+    c = !1,
+    d = null,
+    u = protocolHint(e),
+    l = !1,
+    E = "url-validation",
+    T = !1,
+    f = "not-applicable",
+    p = null;
+  function cleanup() {
+    if (!session.closed) {
+      session.closed = !0;
+      try {
+        session.agent && session.agent.destroy && session.agent.destroy();
+      } catch (e) {}
     }
-
-    stage = 'connect';
-    if (isHttps) tlsPhase = 'tcp-connect';
-    request = mod.request(requestOptions, function (response) {
-      var status = response.statusCode || 0;
-      var location = response.headers && response.headers.location;
-      var chunks = [], received = 0;
-      responseStarted = true;
-      stage = 'response-status';
-      if (isHttps) tlsPhase = 'verified';
-
-      if (status >= 300 && status < 400 && location) {
-        response.resume();
-        if (settled) return;
-        settled = true;
-        stage = 'redirect';
-        try {
-          location = redirectUrl(target, location);
-        } catch (redirectError) {
-          if (totalTimer) clearTimeout(totalTimer);
-          return callback(requestError(
-            redirectError,
-            stage,
-            redirects + 1,
-            protocolHint(location),
-            redirectError && redirectError.meta && redirectError.meta.originChanged
-          ));
-        }
-        if (totalTimer) clearTimeout(totalTimer);
-        return fetchUrlNow(location, {
-          deadline: deadline,
-          redirects: redirects + 1,
-          headers: headers,
-          previousTarget: target
-        }, callback);
-      }
-      if (status < 200 || status >= 300) {
-        response.resume();
-        if (status === 401) return done(err('PROVIDER_AUTH_FAILED', '401', { status: 401 }));
-        if (status === 403) return done(err('PROVIDER_REJECTED', '403', { status: 403 }));
-        return done(err('HTTP_ERROR', String(status), { status: status }));
-      }
-
-      stage = 'response-read';
-      response.on('data', function (chunk) {
-        if (settled) return;
-        received += chunk.length;
-        if (received > MAX_BODY_BYTES) {
-          chunks = [];
-          done(err('RESPONSE_TOO_LARGE', 'body limit exceeded'));
-          try { response.destroy(); } catch (e) {}
-          return;
-        }
-        chunks.push(chunk);
-      });
-      response.on('end', function () {
-        if (settled) return;
-        var buffer = Buffer.concat(chunks);
-        chunks = [];
-        stage = 'decode';
-        decodeBody(buffer, response.headers['content-encoding'], function (decodeError, text) {
-          if (totalTimer) clearTimeout(totalTimer);
-          if (decodeError) return done(decodeError);
-          done(null, text, response.headers || {});
-        });
-      });
-      response.on('error', function (responseError) {
-        stage = 'response-read';
-        done(err(
-          'NETWORK_ERROR',
-          (responseError && responseError.code) || 'response failed',
-          transportDiagnostic(responseError, tlsPhase)
-        ));
-      });
-      response.setTimeout(READ_TIMEOUT_MS, function () {
-        stage = 'response-read';
-        done(err('TIMEOUT', 'read timeout'));
-        try { response.destroy(); } catch (e) {}
-      });
-    });
-
-    request.on('socket', function (socket) {
-      if (!isHttps || !socket || typeof socket.on !== 'function') return;
-      socket.on('connect', function () { tlsPhase = 'tls-handshake'; });
-      socket.on('secure', function () { tlsPhase = 'certificate-verification'; });
-      socket.on('secureConnect', function () { tlsPhase = 'verified'; });
-    });
-    request.setTimeout(CONNECT_TIMEOUT_MS, function () {
-      done(err('TIMEOUT', 'connect timeout', { tlsPhase: tlsPhase }));
-      try { request.destroy(); } catch (e) {}
-    });
-    request.on('error', function (transportError) {
-      /* No insecure retry: a certificate problem is reported, never bypassed. */
-      stage = responseStarted ? 'response-read' : 'connect';
-      if (isTlsError(transportError)) {
-        return done(err(
-          'TLS_CERTIFICATE_INVALID',
-          'certificate verification failed',
-          transportDiagnostic(transportError, tlsPhase)
-        ));
-      }
-      done(err(
-        'NETWORK_ERROR',
-        transportError.code || 'request failed',
-        transportDiagnostic(transportError, tlsPhase)
-      ));
-    });
-
-    totalTimer = setTimeout(function () {
-      if (!responseStarted) stage = 'connect';
-      done(err('TIMEOUT', 'total timeout', { tlsPhase: tlsPhase }));
-      try { request.destroy(); } catch (e) {}
-    }, Math.max(1, deadline - Date.now()));
-
-    request.end();
+  }
+  function _(e, r, n) {
+    c ||
+      ((c = !0),
+      d && (clearTimeout(d), (d = null)),
+      cleanup(),
+      t(e ? requestError(e, E, s, u, l) : null, r, n));
+  }
+  if (Date.now() >= o) return _(err("TIMEOUT", "deadline exceeded"));
+  if (s > ssrf.MAX_REDIRECTS) return _(err("TOO_MANY_REDIRECTS", String(s)));
+  try {
+    n = ssrf.assertUrlAllowed(e);
+  } catch (e) {
+    return _(e);
+  }
+  ((u = n.scheme),
+    (l = !!a && !ssrf.sameOrigin(a, n)) && (i = ssrf.stripSensitiveHeaders(i)));
+  var stateKey = n.origin + n.path + "|" + cookieState(jar, n);
+  if (seen[stateKey])
+    return _(
+      err("TOO_MANY_REDIRECTS", "redirect loop", {
+        stage: "redirect",
+        redirectHop: s,
+        protocol: n.scheme,
+        originChanged: l,
+      }),
+    );
+  seen[stateKey] = !0;
+  E = "dns-validation";
+  d = setTimeout(
+    function () {
+      _(err("TIMEOUT", "total timeout", { tlsPhase: f }));
+      try {
+        p && p.destroy();
+      } catch (e) {}
+    },
+    Math.max(1, o - Date.now()),
+  );
+  resolveValidated(n.hostname, o, function (e, r) {
+    if (!c) {
+      if (Date.now() >= o)
+        return _(err("TIMEOUT", "total timeout", { tlsPhase: f }));
+      if (e) return _(e);
+      var a,
+        u = r[0],
+        l = "https" === n.scheme,
+        h = l ? https : http,
+        O = copyHeaders(i),
+        cookie = cookieHeader(jar, n);
+      removeHeader(O, "Cookie");
+      cookie && (O.Cookie = cookie);
+      ((O.Host = n.hostname),
+        (O["Accept-Encoding"] = "gzip, deflate"),
+        (O.Connection = "keep-alive"));
+      session.agent ||
+        (session.agent = new h.Agent({ keepAlive: !0, maxSockets: 1 }));
+      var R = {
+        host: u.address,
+        port: n.port,
+        path: n.path,
+        method: "GET",
+        headers: O,
+        servername: l ? n.hostname : void 0,
+        rejectUnauthorized: !0,
+        agent: session.agent,
+        maxHeaderSize: MAX_HEADER_BYTES,
+      };
+      (l && loadBundledCa() && (R.ca = bundledCa),
+        l && compatibleEcdhCurves() && (R.ecdhCurve = compatibleEcdhCurves()),
+        (E = "connect"),
+        l && (f = "tcp-connect"),
+        (p = h.request(R, function (e) {
+          var r = e.statusCode || 0,
+            a = e.headers && e.headers.location,
+            u = [],
+            p = 0;
+          if (
+            ((T = !0),
+            (E = "response-status"),
+            l && (f = "verified"),
+            r >= 300 && r < 400 && a)
+          ) {
+            var beforeCookies = cookieState(jar, n);
+            storeSetCookies(jar, n, e.headers || {});
+            var cookieChanged = beforeCookies !== cookieState(jar, n);
+            if ((e.resume(), c)) return;
+            ((c = !0), (E = "redirect"));
+            try {
+              a = redirectUrl(n, a);
+            } catch (e) {
+              return (
+                d && clearTimeout(d),
+                cleanup(),
+                t(
+                  requestError(
+                    e,
+                    E,
+                    s + 1,
+                    protocolHint(a),
+                    e && e.meta && e.meta.originChanged,
+                  ),
+                )
+              );
+            }
+            if (sameRequestTarget(n, a) && !cookieChanged)
+              return (
+                d && clearTimeout(d),
+                cleanup(),
+                t(
+                  requestError(
+                    err("TOO_MANY_REDIRECTS", "self redirect", {
+                      stage: "redirect",
+                      redirectHop: s + 1,
+                    }),
+                    "redirect",
+                    s + 1,
+                    protocolHint(a),
+                    !1,
+                  ),
+                )
+              );
+            var nextHeaders = copyHeaders(i);
+            if (redirectOriginChanged(n, a))
+              nextHeaders = ssrf.stripSensitiveHeaders(nextHeaders);
+            return (
+              d && clearTimeout(d),
+              fetchUrlNow(
+                a,
+                {
+                  deadline: o,
+                  redirects: s + 1,
+                  headers: nextHeaders,
+                  previousTarget: n,
+                  cookieJar: jar,
+                  redirectStates: seen,
+                  session: session,
+                },
+                t,
+              )
+            );
+          }
+          if (r < 200 || r >= 300)
+            return (
+              e.resume(),
+              _(
+                401 === r
+                  ? err("PROVIDER_AUTH_FAILED", "401", { status: 401 })
+                  : 403 === r
+                    ? err("PROVIDER_REJECTED", "403", { status: 403 })
+                    : 429 === r
+                      ? err("RATE_LIMITED", "429", { status: 429 })
+                      : err("HTTP_ERROR", String(r), { status: r }),
+              )
+            );
+          ((E = "response-read"),
+            e.on("data", function (r) {
+              if (!c)
+                if ((p += r.length) > MAX_BODY_BYTES) {
+                  ((u = []),
+                    _(err("RESPONSE_TOO_LARGE", "body limit exceeded")));
+                  try {
+                    e.destroy();
+                  } catch (e) {}
+                } else u.push(r);
+            }),
+            e.on("end", function () {
+              if (!c) {
+                var r = Buffer.concat(u);
+                ((u = []),
+                  (E = "decode"),
+                  decodeBody(
+                    r,
+                    e.headers["content-encoding"],
+                    function (r, t) {
+                      if ((d && clearTimeout(d), r)) return _(r);
+                      _(null, t, e.headers || {});
+                    },
+                  ));
+              }
+            }),
+            e.on("error", function (e) {
+              ((E = "response-read"),
+                _(
+                  err(
+                    "NETWORK_ERROR",
+                    (e && e.code) || "response failed",
+                    transportDiagnostic(e, f),
+                  ),
+                ));
+            }),
+            e.setTimeout(READ_TIMEOUT_MS, function () {
+              ((E = "response-read"), _(err("TIMEOUT", "read timeout")));
+              try {
+                e.destroy();
+              } catch (e) {}
+            }));
+        })).on("socket", function (e) {
+          l &&
+            e &&
+            "function" == typeof e.on &&
+            (e.on("connect", function () {
+              f = "tls-handshake";
+            }),
+            e.on("secure", function () {
+              f = "certificate-verification";
+            }),
+            e.on("secureConnect", function () {
+              f = "verified";
+            }));
+        }),
+        p.setTimeout(CONNECT_TIMEOUT_MS, function () {
+          _(err("TIMEOUT", "connect timeout", { tlsPhase: f }));
+          try {
+            p.destroy();
+          } catch (e) {}
+        }),
+        p.on("error", function (e) {
+          if (((E = T ? "response-read" : "connect"), isTlsError(e)))
+            return _(
+              err(
+                "TLS_CERTIFICATE_INVALID",
+                "certificate verification failed",
+                transportDiagnostic(e, f),
+              ),
+            );
+          _(
+            err(
+              "NETWORK_ERROR",
+              e.code || "request failed",
+              transportDiagnostic(e, f),
+            ),
+          );
+        }),
+        p.end());
+    }
   });
 }
-
 function pumpQueue() {
-  var job;
-  while (activeRequests < MAX_CONCURRENT && requestQueue.length) {
-    job = requestQueue.shift();
-    if (job.options.deadline && Date.now() >= job.options.deadline) {
-      job.callback(err('TIMEOUT', 'deadline exceeded'));
-      continue;
-    }
-    activeRequests++;
-    (function (current) {
-      fetchUrlNow(current.url, current.options, function () {
-        var args = arguments;
-        activeRequests--;
-        current.callback.apply(null, args);
-        pumpQueue();
-      });
-    })(job);
-  }
+  for (var e; activeRequests < MAX_CONCURRENT && requestQueue.length;)
+    (e = requestQueue.shift()).options.deadline &&
+    Date.now() >= e.options.deadline
+      ? e.callback(err("TIMEOUT", "deadline exceeded"))
+      : (activeRequests++,
+        (function (e) {
+          fetchUrlNow(e.url, e.options, function () {
+            var r = arguments;
+            (activeRequests--, e.callback.apply(null, r), pumpQueue());
+          });
+        })(e));
 }
-
-/* One process-wide limiter covers simultaneous Luna requests as well as
-   nested subscription documents. Redirects retain their existing slot. */
-function fetchUrl(rawUrl, options, callback) {
-  requestQueue.push({ url: rawUrl, options: options || {}, callback: callback });
-  pumpQueue();
+function fetchUrl(e, r, t) {
+  (requestQueue.push({ url: e, options: r || {}, callback: t }), pumpQueue());
 }
-
 module.exports = {
   CONNECT_TIMEOUT_MS: CONNECT_TIMEOUT_MS,
   READ_TIMEOUT_MS: READ_TIMEOUT_MS,
@@ -480,14 +671,22 @@ module.exports = {
   MAX_BODY_BYTES: MAX_BODY_BYTES,
   MAX_DECOMPRESSED_BYTES: MAX_DECOMPRESSED_BYTES,
   MAX_CONCURRENT: MAX_CONCURRENT,
+  MAX_COOKIE_COUNT: MAX_COOKIE_COUNT,
+  MAX_COOKIE_BYTES: MAX_COOKIE_BYTES,
   fetchUrl: fetchUrl,
   resolveValidated: resolveValidated,
   isTlsError: isTlsError,
   decodeBody: decodeBody,
   loadBundledCa: loadBundledCa,
   redirectUrl: redirectUrl,
+  sameRequestTarget: sameRequestTarget,
   requestError: requestError,
   protocolHint: protocolHint,
   transportDiagnostic: transportDiagnostic,
-  compatibleEcdhCurves: compatibleEcdhCurves
+  compatibleEcdhCurves: compatibleEcdhCurves,
+  createCookieJar: createCookieJar,
+  cookieHeader: cookieHeader,
+  cookieState: cookieState,
+  storeSetCookie: storeSetCookie,
+  storeSetCookies: storeSetCookies,
 };
