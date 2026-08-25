@@ -17,6 +17,7 @@ import struct
 import subprocess
 import tarfile
 import tempfile
+import pathlib
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +25,7 @@ APP = os.path.join(ROOT, "app")
 SERVICE = os.path.join(APP, "service")
 CORES = os.environ.get("ALCYONE_CORES_DIR", os.path.join(ROOT, "build", "cores"))
 VERSION_FILE = os.path.join(ROOT, "VERSION")
-VERSION = open(VERSION_FILE, "r", encoding="utf-8").read().strip() if os.path.exists(VERSION_FILE) else "4.2.0"
+VERSION = open(VERSION_FILE, "r", encoding="utf-8").read().strip() if os.path.exists(VERSION_FILE) else "4.2.1"
 SOURCE_DATE_EPOCH = 1700000000
 
 ELF_MACHINES = {
@@ -369,10 +370,62 @@ def build_edition(name, output_dir, ares_package, label=""):
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--edition", choices=("all", "xray", "sing-box"), default="all")
-    parser.add_argument("--output-dir", default=os.path.join(ROOT, "release-assets"))
+    parser.add_argument(
+        "--output-dir",
+        # Shipping artifacts live in release-assets/ and are pinned by the
+        # feed metadata; local builds must not overwrite them by accident
+        # (audit 2026-08 finding). Pass --output-dir release-assets only
+        # for an intentional, reviewed release rebuild.
+        default=os.path.join(ROOT, "build", "dist"),
+        help="directory for built IPKs (default: build/dist)",
+    )
     parser.add_argument("--label", default="", help="filename-only suffix for an unpublished candidate")
     parser.add_argument("--ares-package", help="path to the official ares-package executable")
     return parser.parse_args()
+
+
+def write_artifacts_manifest(output_dir, names, label):
+    """Emit build/dist/artifacts.json describing every IPK of this run.
+
+    Repeated invocations (one edition at a time) MERGE by file name, so
+    a full two-edition release ends up with both entries. Feed hashes
+    must come from real bytes; tools/release-metadata.py sync consumes
+    this."""
+    import datetime
+
+    target = pathlib.Path(output_dir) / "artifacts.json"
+    existing = {}
+    if target.is_file():
+        try:
+            prior = json.loads(target.read_text(encoding="utf-8"))
+            for item in prior.get("editions", []):
+                existing[item["file"]] = item
+        except (ValueError, OSError, KeyError):
+            existing = {}
+    suffix = ("_" + label) if label else ""
+    pattern = re.compile(
+        r"^Alcyone-(?P<edition>.+?)_%s%s\.ipk$"
+        % (re.escape(VERSION), re.escape(suffix))
+    )
+    for path in sorted(pathlib.Path(output_dir).glob("Alcyone-*")):
+        match = pattern.match(path.name)
+        if not match:
+            continue
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        existing[path.name] = {
+            "edition": match.group("edition"),
+            "file": path.name,
+            "sha256": digest,
+            "size": path.stat().st_size,
+        }
+    manifest = {
+        "version": VERSION,
+        "label": label,
+        "generatedAt": datetime.datetime.utcnow().isoformat() + "Z",
+        "editions": [existing[key] for key in sorted(existing)],
+    }
+    target.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print("wrote %s (%d edition(s))" % (target, len(manifest["editions"])))
 
 
 def main():
@@ -380,8 +433,10 @@ def main():
     executable = find_ares_package(args.ares_package)
     label = re.sub(r"[^A-Za-z0-9._-]", "", args.label)
     names = ("xray", "sing-box") if args.edition == "all" else (args.edition,)
+    output_dir = os.path.abspath(args.output_dir)
     for name in names:
-        build_edition(name, os.path.abspath(args.output_dir), executable, label)
+        build_edition(name, output_dir, executable, label)
+    write_artifacts_manifest(output_dir, names, label)
 
 
 if __name__ == "__main__":

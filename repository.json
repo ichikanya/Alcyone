@@ -22,9 +22,9 @@
         "rootRequired": true,
         "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.2.0/Alcyone-XRay_4.2.0.ipk",
         "ipkHash": {
-          "sha256": "b3221bd6c8c35eaf959ed38486c0a6721b5f2a103ddc085286774479c38514a2"
+          "sha256": "0bfd3805375558f89fab70245549d8d5a4dd95b9b16a8ccf9b0b9b7a87a08318"
         },
-        "ipkSize": 22688248
+        "ipkSize": 22693284
       },
       "pool": "main",
       "shortDescription": "XRay edition for large subscriptions, XHTTP, and complete configurations.",
@@ -46,9 +46,9 @@
         "rootRequired": true,
         "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.2.0/Alcyone-sing-box_4.2.0.ipk",
         "ipkHash": {
-          "sha256": "5e86efb5955003586fb388db6afd51aec47d6207e55f7045a5d85eb537404e8f"
+          "sha256": "e7b6e57c70afceca7b23198ad284f13af1ec1aebba08b6f2b7c03dfa4ca9ceac"
         },
-        "ipkSize": 12340932
+        "ipkSize": 12345876
       },
       "pool": "main",
       "shortDescription": "Low-resource sing-box edition with one native TUN process.",

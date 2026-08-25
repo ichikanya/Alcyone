@@ -616,7 +616,11 @@ check("no shipped title, version or metadata carries PROBE", function () {
   var appinfo = JSON.parse(
     fs.readFileSync(path.join(ROOT, "app", "appinfo.json"), "utf8"),
   );
-  assert.strictEqual(appinfo.version, "4.2.0");
+  /* Follow the source of truth so release bumps do not touch this test. */
+  var expectedVersion = fs
+    .readFileSync(path.join(ROOT, "VERSION"), "utf8")
+    .trim();
+  assert.strictEqual(appinfo.version, expectedVersion);
   assert.strictEqual(appinfo.title, "Alcyone XRay");
   assert.ok(appinfo.title.indexOf("PROBE") < 0);
   var html = fs.readFileSync(path.join(ROOT, "app", "index.html"), "utf8");

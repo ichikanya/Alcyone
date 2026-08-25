@@ -1,5 +1,39 @@
 # Changelog
 
+## 4.2.1 (unreleased)
+
+Stabilization line from the August 2026 audit. No user-visible feature
+changes; every item below removes a proven failure mode.
+
+- Upgrade safety: profile stores are raw-backed up before any migration;
+  a corrupt store now blocks the upgrade (`STORE_UNRECOVERABLE`) instead
+  of being silently replaced by an empty list; sing-box-incompatible
+  profiles are marked, never deleted; network recovery runs before data
+  migration on boot.
+- Independent network guardian (ALCYONE_NETGUARD=1): a root-level
+  rtnetlink watchdog removes only the leased diversion objects when the
+  service dies, hangs or is SIGSTOP-ed, restoring ordinary internet
+  without any Node code. Armed before the route takeover, disarmed only
+  after the physical path is verified.
+- Routing: policy verification is table-aware (healthy policy sessions
+  no longer fall back to legacy); rollback without owned state issues no
+  destructive commands; each edition owns its own TUN device (`alx0` /
+  `als0`), so one edition can never destroy the other's tunnel.
+- Watchdog: only bidirectional traffic counts as liveness evidence;
+  three failed functional probes or sustained near-limit descriptors
+  open incidents that trigger recovery (detection ≤60 s).
+- Recovery budget: at most three automatic reconnects per rolling 30
+  minutes with 0/60 s/5 min steps and a 30 minute breaker, persisted
+  across service restarts; ten minutes of healthy session forgives the
+  oldest attempt.
+- Data plane: optional single-process XRay native TUN mode
+  (edition `dataPlane: "native-tun"`, hardware-spike gated); TUN MTU is
+  policy-driven (clamp to 1280–1400) instead of hardcoded 1500.
+- Release tooling: `build_ipk.py` defaults to `build/dist` and emits an
+  artifacts manifest; new release-metadata guard proves feed files,
+  manifests and shipped IPK hashes/sizes agree (repository.json drift
+  found and fixed).
+
 ## 4.2.0 (2026-08-19)
 
 - Added resource-aware tunnel liveness monitoring, route-first fail-open recovery, a single delayed reconnect, and a repeated-incident circuit breaker.

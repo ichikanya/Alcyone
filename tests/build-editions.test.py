@@ -218,13 +218,35 @@ def main():
     }
     with tempfile.TemporaryDirectory(prefix="alcyone-build-test-") as output_dir:
         build(output_dir, "xray")
-        assert os.listdir(output_dir) == [expected["xray"]["artifact"]]
+        assert sorted(os.listdir(output_dir)) == sorted(
+            [expected["xray"]["artifact"], "artifacts.json"]
+        ), (
+            "unexpected xray build output: %r" % (sorted(os.listdir(output_dir)),)
+        )
         xray_path = os.path.join(output_dir, expected["xray"]["artifact"])
         verify(xray_path, expected["xray"])
 
         build(output_dir, "sing-box")
         singbox_path = os.path.join(output_dir, expected["sing-box"]["artifact"])
         verify(singbox_path, expected["sing-box"])
+
+        artifacts = json.loads(
+            open(os.path.join(output_dir, "artifacts.json"), encoding="utf-8").read()
+        )
+        assert artifacts["version"] == VERSION
+        by_file = {item["file"]: item for item in artifacts["editions"]}
+        for key in ("xray", "sing-box"):
+            artifact_name = expected[key]["artifact"]
+            assert artifact_name in by_file, "artifacts.json lacks %s" % artifact_name
+            item = by_file[artifact_name]
+            path_for = os.path.join(output_dir, artifact_name)
+            assert item["size"] == os.path.getsize(path_for)
+            import hashlib as _hashlib
+            assert (
+                item["sha256"]
+                == _hashlib.sha256(open(path_for, "rb").read()).hexdigest()
+            )
+        print("artifacts manifest matches the built IPKs byte-for-byte")
 
     print("independent edition build tests passed")
 

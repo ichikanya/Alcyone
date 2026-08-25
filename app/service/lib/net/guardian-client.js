@@ -29,27 +29,27 @@ var LEASE_VERSION = 1,
     "/usr/local/bin/alcyone-netguard",
   ];
 
-function shQuote(r) {
+function quoteLeaseValue(r) {
   return "'" + String(r).replace(/'/g, "'\\''") + "'";
 }
 function serializeLease(r) {
   var e = [];
   e.push("# alcyone-netguard lease v" + LEASE_VERSION);
   e.push("VERSION='" + LEASE_VERSION + "'");
-  e.push("EDITION=" + shQuote(r.edition || ""));
-  e.push("TUN_IF=" + shQuote(r.tunIf || ""));
+  e.push("EDITION=" + quoteLeaseValue(r.edition || ""));
+  e.push("TUN_IF=" + quoteLeaseValue(r.tunIf || ""));
   e.push(
-    "RULE_PREF=" + shQuote(null == r.rulePref ? "" : String(r.rulePref)),
+    "RULE_PREF=" + quoteLeaseValue(null == r.rulePref ? "" : String(r.rulePref)),
   );
   e.push(
-    "RULE_TABLE=" + shQuote(null == r.ruleTable ? "" : String(r.ruleTable)),
+    "RULE_TABLE=" + quoteLeaseValue(null == r.ruleTable ? "" : String(r.ruleTable)),
   );
   e.push("V6_RULE=" + (r.v6Rule ? "1" : "0"));
-  e.push("SPLIT_V4=" + shQuote((r.splitV4 || []).join(",")));
-  e.push("V6_BLOCK=" + shQuote((r.v6Block || []).join(",")));
-  e.push("LEASE_MS=" + shQuote(String(r.leaseMs || LEASE_MS)));
-  e.push("HEARTBEAT=" + shQuote(r.heartbeatFile || ""));
-  e.push("SERVICE_PID=" + shQuote(String(r.servicePid || process.pid)));
+  e.push("SPLIT_V4=" + quoteLeaseValue((r.splitV4 || []).join(",")));
+  e.push("V6_BLOCK=" + quoteLeaseValue((r.v6Block || []).join(",")));
+  e.push("LEASE_MS=" + quoteLeaseValue(String(r.leaseMs || LEASE_MS)));
+  e.push("HEARTBEAT=" + quoteLeaseValue(r.heartbeatFile || ""));
+  e.push("SERVICE_PID=" + quoteLeaseValue(String(r.servicePid || process.pid)));
   e.push("CREATED_AT='" + new Date().toISOString() + "'");
   return e.join("\n") + "\n";
 }

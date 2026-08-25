@@ -6,7 +6,7 @@
   "coreLabel": "XRay",
   "editionName": "XRay Edition",
   "title": "Alcyone XRay",
-  "version": "4.2.0",
+  "version": "4.2.1",
   "dataDir": "/var/lib/alcyone",
   "autostartName": "alcyone-vpn",
   "webPort": 8080

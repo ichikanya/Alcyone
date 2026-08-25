@@ -4,7 +4,7 @@ Alcyone is a VPN client for rooted LG webOS TVs. Version 4.2.0 is available in t
 
 | Edition | Best for | Core and identity |
 | --- | --- | --- |
-| **Alcyone XRay** | Large subscriptions, many configurations, XHTTP, and complete XRay configs with routing or balancers | Xray 26.3.27 + tun2socks; existing `com.alcyone.vpn` identity and `/var/lib/alcyone` data |
+| **Alcyone XRay** | Large subscriptions, many configurations, XHTTP, and complete XRay configs with routing or balancers | Xray 26.3.27 (native-TUN mode behind an edition flag); existing `com.alcyone.vpn` identity and `/var/lib/alcyone` data |
 | **Alcyone sing-box** | Low-powered TVs, low process and descriptor use, stability, and fast startup | Trimmed sing-box 1.13.14 with one native system-TUN process; separate `com.alcyone.vpn.singbox` identity and `/var/lib/alcyone-singbox` data |
 
 Both editions support VLESS, VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2 links, unified subscription import, server selection and ping, subscription updates, VPN autostart, external-IP checks, tunnel logs, Russian/English UI, and LG remote navigation. Root access is required.
