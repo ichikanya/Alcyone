@@ -83,7 +83,7 @@ function Watchdog(options) {
   this.timer = null;
   this.startedAt = 0;
   this.lastCounters = null;
-  this.lastBidirectionalActivity = 0;
+  this.lastProbeOkAt = 0;
   this.failedProbes = 0;
   this.probeBusy = false;
   this.fdHighSamples = 0;
@@ -148,6 +148,15 @@ Watchdog.prototype.checkResources = function (now) {
     this.snapshot.warning = "FD_PRESSURE_SUSTAINED";
   else
     this.snapshot.warning = maximumFdRatio >= 0.70 ? "FD_PRESSURE" : "";
+  /* EMFILE history on real devices: a core approaching its descriptor
+     ceiling is a functional failure in progress, not a cosmetic warning.
+     Two consecutive critical samples (~30s) escalate to an incident so
+     the recovery path runs before accept() starts failing. */
+  if (this.fdCriticalSamples >= 2)
+    return this.openIncident(
+      "FD_EXHAUSTION_RISK",
+      "fd-ratio " + Math.round(maximumFdRatio * 100) + "% sustained",
+    );
 
   if (combinedRss > 0) {
     this.rssSamples.push({ at: now, rssKb: combinedRss });
@@ -181,17 +190,26 @@ Watchdog.prototype.tick = function () {
   if (this.incidentOpen) return;
   var now = this.now();
   var counters = this.counters();
-  if (this.lastCounters && counters.rx !== null && counters.tx !== null &&
-      (counters.rx > this.lastCounters.rx || counters.tx > this.lastCounters.tx))
-    this.lastBidirectionalActivity = now;
+  /* Only growth of BOTH directions is evidence of a working data plane.
+     A one-way QUIC/UDP flood used to suppress probes forever while the
+     tunnel was functionally dead for TCP. */
+  var bothGrew = !!this.lastCounters &&
+    counters.rx !== null && counters.tx !== null &&
+    counters.rx > this.lastCounters.rx && counters.tx > this.lastCounters.tx;
   if (counters.rx === null || counters.tx === null ||
-      (this.lastCounters && (counters.rx < this.lastCounters.rx || counters.tx < this.lastCounters.tx)))
-    this.lastBidirectionalActivity = 0;
+      (this.lastCounters && (counters.rx < this.lastCounters.rx || counters.tx < this.lastCounters.tx))) {
+    /* interface recreated: stale baselines mean nothing */
+    this.lastProbeOkAt = 0;
+  }
   this.lastCounters = counters;
   this.snapshot.counters = counters;
   this.checkResources(now);
-  if (this.incidentOpen || now - this.lastBidirectionalActivity < IDLE_PROBE_MS || this.probeBusy) return;
+  if (this.incidentOpen || this.probeBusy) return;
   if (!this.physicalAvailable()) return;
+  /* Fresh bidirectional traffic keeps the probe quiet only while the
+     last successful probe is younger than IDLE_PROBE_MS; afterwards the
+     active check runs regardless of throughput. */
+  if (bothGrew && now - this.lastProbeOkAt < IDLE_PROBE_MS) return;
   var self = this;
   this.probeBusy = true;
   this.probe.run(function (error, ok) {
@@ -199,17 +217,25 @@ Watchdog.prototype.tick = function () {
     self.snapshot.lastProbeOk = !!ok;
     if (ok) {
       self.failedProbes = 0;
-      self.lastBidirectionalActivity = self.now();
-    } else self.failedProbes++;
+      self.lastProbeOkAt = self.now();
+      if ("LIVENESS_PROBE_FAILED" === self.snapshot.warning)
+        self.snapshot.warning = "";
+      return;
+    }
+    self.failedProbes++;
+    self.snapshot.warning = "LIVENESS_PROBE_FAILED";
+    /* A live-but-hung core (SIGSTOP, blackhole, EMFILE'd accept) must be
+       handed to recovery, not merely described. Three consecutive
+       deadline-bounded failures ~= <=60s at a 15s tick. */
     if (self.failedProbes >= 3)
-      self.snapshot.warning = "LIVENESS_PROBE_FAILED";
+      self.openIncident("LIVENESS_FAILED", "functional-probe x" + self.failedProbes);
   });
 };
 
 Watchdog.prototype.start = function () {
   if (this.timer) return;
   this.startedAt = this.now();
-  this.lastBidirectionalActivity = this.startedAt;
+  this.lastProbeOkAt = 0;
   this.lastCounters = null;
   this.failedProbes = 0;
   this.probeBusy = false;

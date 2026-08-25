@@ -16,6 +16,7 @@ var fs = require("fs"),
   systemProxyLib = require("../system-proxy"),
   capabilitiesLib = require("../connection-capabilities"),
   watchdogLib = require("./watchdog"),
+  recoveryBudgetLib = require("./recovery-budget"),
   livenessProbeLib = require("./liveness-probe"),
   errors = require("../errors"),
   err = errors.err,
@@ -149,6 +150,12 @@ function VpnManager(e) {
       stateFile: this.paths.routeState,
     })),
     (this.systemProxy.routes = this.routes),
+    (this.recoveryBudget =
+      e.recoveryBudget ||
+      new recoveryBudgetLib.RecoveryBudget({
+        file: this.paths.dataDir + "/recovery-budget.json",
+        logger: this.logger,
+      })),
     (this.capabilities =
       e.capabilities ||
       new capabilitiesLib.ConnectionCapabilities({
@@ -287,23 +294,47 @@ function VpnManager(e) {
         return self.rollbackWithRetry(function () {});
       }
       if (self.breakerOpen) return;
+      var budgetPlan = self.recoveryBudget.plan();
+      if (!budgetPlan.allowed) {
+        self.breakerOpen = true;
+        self.lastError = { code: "RECOVERY_BUDGET_EXHAUSTED", detail: budgetPlan.reason };
+        self.logger && self.logger.warn("automatic reconnect denied by recovery budget", { reason: budgetPlan.reason });
+        return;
+      }
       self.watchdogRecoveryTimer = self.setTimeout(function () {
         self.watchdogRecoveryTimer = null;
         if (self.state !== STATE.IDLE || self.breakerOpen) return;
+        /* Spending the budget happens only when a reconnect actually
+           starts; waiting for network stability is free. */
+        self.recoveryBudget.commitAttempt();
         self.connect(function (error) {
           if (error) {
             self.breakerOpen = true;
             self.lastError = { code: error.code || "AUTOSTART_RETRY_EXHAUSTED", detail: "" };
           }
         });
-      }, 60000);
+      }, Math.max(0, budgetPlan.readyAt - Date.now()));
       if (self.watchdogRecoveryTimer && self.watchdogRecoveryTimer.unref)
         self.watchdogRecoveryTimer.unref();
     });
     return true;
   }),
-  (VpnManager.prototype.rollbackWithRetry = function (callback) {
+  (VpnManager.prototype.scheduleBudgetForgiveness = function () {
     var self = this;
+    if (this.budgetForgiveTimer) return;
+    this.budgetForgiveTimer = this.setTimeout(function () {
+      self.budgetForgiveTimer = null;
+      if (self.state !== STATE.CONNECTED || !self.connectedAt) return;
+      /* Ten minutes of verified healthy connected time forgives the
+         oldest automatic attempt, so long stable sessions gradually
+         restore full recovery capacity. */
+      if (Date.now() - self.connectedAt >= recoveryBudgetLib.FORGIVE_AFTER_HEALTHY_MS)
+        self.recoveryBudget.forgiveOldest();
+    }, recoveryBudgetLib.FORGIVE_AFTER_HEALTHY_MS);
+    if (this.budgetForgiveTimer && this.budgetForgiveTimer.unref)
+      this.budgetForgiveTimer.unref();
+  }),
+  (VpnManager.prototype.rollbackWithRetry = function (callback) {    var self = this;
     var delays = [1000, 2000, 5000];
     var attempt = 0;
     function run() {
@@ -889,6 +920,7 @@ function VpnManager(e) {
           }),
           s.startNetworkGuard(),
           s.watchdog && s.watchdog.start(),
+          s.scheduleBudgetForgiveness(),
           i.finish(null, { state: s.state, profileId: e.id, mode: i.mode }));
       }
     }
@@ -1512,7 +1544,7 @@ function VpnManager(e) {
       lastErrorCode: (this.lastError && this.lastError.code) || "",
       routingBackend: (this.routes.loadState() && this.routes.loadState().routingBackend) || "",
       watchdog: this.watchdog ? this.watchdog.status() : { state: "unavailable" },
-      breaker: { open: this.breakerOpen, lastIncidentAt: this.lastWatchdogIncidentAt || 0 },
+      breaker: { open: this.breakerOpen, lastIncidentAt: this.lastWatchdogIncidentAt || 0, budget: this.recoveryBudget ? this.recoveryBudget.status() : null },
       routes: this.routes.diagnostics(),
     };
   }),
