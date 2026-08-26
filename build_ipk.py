@@ -325,6 +325,81 @@ def control_metadata(path):
     return metadata, text
 
 
+def replace_ar_member(path, target_name, replacement):
+    """Replace one ar payload without rewriting official member headers."""
+    original = read(path)
+    if not original.startswith(b"!<arch>\n"):
+        raise SystemExit("ares-package output has invalid ar magic: " + path)
+    output = bytearray(original[:8])
+    offset = 8
+    replaced = False
+    while offset < len(original):
+        header = bytearray(original[offset:offset + 60])
+        if len(header) != 60 or header[58:60] != b"`\n":
+            raise SystemExit("ares-package output has an invalid ar member header")
+        name = header[:16].decode("ascii").strip().rstrip("/")
+        size = int(header[48:58].decode("ascii").strip())
+        offset += 60
+        payload = original[offset:offset + size]
+        offset += size + (size % 2)
+        if name == target_name:
+            payload = replacement
+            header[48:58] = str(len(payload)).encode("ascii").ljust(10, b" ")
+            replaced = True
+        output.extend(header)
+        output.extend(payload)
+        if len(payload) % 2:
+            output.extend(b"\n")
+    if not replaced:
+        raise SystemExit("IPK is missing %s for replacement" % target_name)
+    write(path, bytes(output), 0o644)
+
+
+def normalize_ipk_modes(path, executable_names):
+    """Normalize native executable modes in the final IPK.
+
+    The Windows ares-package path can lose POSIX execute bits even when the
+    staging tree and package.properties are correct. webOS executes the
+    final tar mode, so repair only the declared native binaries and preserve
+    every other official archive member byte-for-byte."""
+    members = read_ar(path)
+    data_raw = members.get("data.tar.gz")
+    if data_raw is None:
+        raise SystemExit("IPK is missing data.tar.gz for mode normalization")
+    source = tarfile.open(fileobj=io.BytesIO(gzip.decompress(data_raw)), mode="r:")
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w:", format=tarfile.PAX_FORMAT) as target:
+        for member in source.getmembers():
+            clean = member.name.lstrip("./")
+            if clean.startswith("usr/palm/applications/") and "/bin/" in clean:
+                basename = clean.rsplit("/", 1)[-1]
+                if basename in executable_names:
+                    member.mode = 0o755
+            extracted = source.extractfile(member) if member.isfile() else None
+            target.addfile(member, extracted)
+            if extracted is not None:
+                extracted.close()
+    compressed = gzip.compress(output.getvalue(), mtime=0)
+    # webOS verifies the canonical ares-package ar member names and header
+    # layout. Preserve every official header byte (including names without
+    # a trailing slash) and change only the data member size and payload.
+    replace_ar_member(path, "data.tar.gz", compressed)
+
+
+def verify_payload_modes(path, executable_names):
+    members = read_ar(path)
+    source = tarfile.open(fileobj=io.BytesIO(gzip.decompress(members["data.tar.gz"])), mode="r:")
+    modes = {}
+    for member in source.getmembers():
+        clean = member.name.lstrip("./")
+        if clean.rsplit("/", 1)[-1] in executable_names:
+            modes[clean] = member.mode & 0o777
+    missing = [name for name in executable_names if not any(k.endswith("/" + name) for k in modes)]
+    bad = [key for key, mode in modes.items() if mode != 0o755]
+    if missing or bad:
+        raise SystemExit("IPK executable mode guard failed: missing=%s bad=%s" % (missing, bad))
+
+
 def verify_official_metadata(path, edition):
     metadata, text = control_metadata(path)
     required = ("Installed-Size", "webOS-Package-Format-Version", "webOS-Packager-Version")
@@ -363,6 +438,9 @@ def build_edition(name, output_dir, ares_package, label=""):
         if len(candidates) != 1:
             raise SystemExit("ares-package produced %d IPKs; expected exactly one" % len(candidates))
         verify_official_metadata(candidates[0], edition)
+        executable_names = [os.path.basename(path) for path in edition["binaries"]]
+        normalize_ipk_modes(candidates[0], executable_names)
+        verify_payload_modes(candidates[0], executable_names)
         output_path = os.path.join(output_dir, edition["artifact"] % (VERSION + label))
         if os.path.exists(output_path):
             os.remove(output_path)

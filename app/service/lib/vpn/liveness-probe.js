@@ -1,6 +1,7 @@
 "use strict";
 
 var https = require("https");
+var urlLib = require("url");
 var ENDPOINTS = [
   { url: "https://connectivitycheck.gstatic.com/generate_204", kind: "204" },
   { url: "https://cp.cloudflare.com/generate_204", kind: "204" },
@@ -27,10 +28,15 @@ function requestEndpoint(endpoint, deadlineMs, callback) {
   var separator = endpoint.url.indexOf("?") >= 0 ? "&" : "?";
   var request;
   try {
-    request = https.get(
+    /* webOS 4/5 ship Node 8, whose https.get does not support the modern
+       three-argument (url, options, callback) overload. Passing one legacy
+       options object keeps the watchdog functional across the supported
+       firmware range instead of turning every probe into a TypeError. */
+    var requestOptions = urlLib.parse(
       endpoint.url + separator + "alcyone=" + Date.now(),
-      { headers: { Connection: "close", "Cache-Control": "no-cache" } },
-      function (response) {
+    );
+    requestOptions.headers = { Connection: "close", "Cache-Control": "no-cache" };
+    request = https.get(requestOptions, function (response) {
         response.setEncoding("utf8");
         response.on("data", function (chunk) {
           body += chunk;
@@ -45,8 +51,7 @@ function requestEndpoint(endpoint, deadlineMs, callback) {
             : response.statusCode === 200 && validIp(body);
           done(null, ok);
         });
-      },
-    );
+      });
     request.setTimeout(deadlineMs, function () {
       request.abort();
       done(null, false);
