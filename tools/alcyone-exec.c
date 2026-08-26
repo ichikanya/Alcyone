@@ -21,11 +21,15 @@ static void fail(const char *code) {
 }
 
 static rlim_t parse_nofile(const char *value) {
-    if (strcmp(value, "1024") == 0) return 1024;
-    if (strcmp(value, "2048") == 0) return 2048;
-    if (strcmp(value, "4096") == 0) return 4096;
-    fail("ALCYONE_EXEC_BAD_NOFILE");
-    return 0;
+    char *end = NULL;
+    unsigned long parsed;
+    errno = 0;
+    parsed = strtoul(value, &end, 10);
+    if (errno != 0 || end == value || *end != '\0' ||
+        parsed < 1024UL || parsed > 65536UL) {
+        fail("ALCYONE_EXEC_BAD_NOFILE");
+    }
+    return (rlim_t)parsed;
 }
 
 static void close_inherited_fds(void) {
@@ -76,7 +80,15 @@ int main(int argc, char **argv) {
 
     limit.rlim_cur = nofile;
     limit.rlim_max = nofile;
-    if (setrlimit(RLIMIT_NOFILE, &limit) != 0) fail("ALCYONE_EXEC_RLIMIT");
+    if (setrlimit(RLIMIT_NOFILE, &limit) != 0) {
+        /* Some rooted firmwares keep CAP_SYS_RESOURCE constrained. Use the
+         highest inherited capability instead of refusing to start the core. */
+        if (getrlimit(RLIMIT_NOFILE, &limit) != 0 || limit.rlim_max < 1024) {
+            fail("ALCYONE_EXEC_RLIMIT");
+        }
+        limit.rlim_cur = limit.rlim_max;
+        if (setrlimit(RLIMIT_NOFILE, &limit) != 0) fail("ALCYONE_EXEC_RLIMIT");
+    }
 
     close_inherited_fds();
     execve(argv[4], &argv[4], environ);

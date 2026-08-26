@@ -161,7 +161,9 @@ function waitFor(e, r, t) {
       if (
         !i.launcher.executable ||
         !path.isAbsolute(i.launcher.executable) ||
-        [1024, 2048, 4096].indexOf(i.launcher.nofile) < 0
+        "number" != typeof i.launcher.nofile ||
+        i.launcher.nofile < 1024 ||
+        i.launcher.nofile > 65536
       )
         throw err("PACKAGE_INCOMPLETE", "invalid process launcher");
       var launcherState = isExecutableFile(i.launcher.executable);

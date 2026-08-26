@@ -17,6 +17,7 @@ assert machine == 40
 assert len(payload) <= 65536
 assert hashlib.sha256(payload).hexdigest() == entry["sha256"]
 assert "PR_SET_PDEATHSIG" in source and "setrlimit(RLIMIT_NOFILE" in source
+assert "getrlimit(RLIMIT_NOFILE" in source and "ALCYONE_EXEC_RLIMIT" in source
 assert "execve(" in source and "system(" not in source
 assert entry["toolchain"] == "zig 0.16.0"
 print("ok - alcyone-exec ARM ELF, size, provenance and syscall contract")

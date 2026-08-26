@@ -26,7 +26,7 @@ var fs = require("fs"),
     CONNECTED: "connected",
     STOPPING: "stopping",
   },
-  XRAY_START_ATTEMPTS = 2,
+  XRAY_START_ATTEMPTS = 3,
   XRAY_RETRY_DELAY_MS = 500,
   NETWORK_GUARD_INTERVAL_MS = 5e3,
   CONNECT_TIMEOUT_MS = 3e4,
@@ -1277,7 +1277,7 @@ function VpnManager(e) {
         (i.launcher = {
           executable: launcherExecutable,
           nofile:
-            "xray" === e ? 4096 : "tun2socks" === e ? 2048 : 1024,
+            "xray" === e ? 32768 : "tun2socks" === e ? 8192 : 8192,
         }),
       (i.env = s),
       (i.cwd = i.cwd || "/"),

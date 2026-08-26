@@ -406,8 +406,11 @@ function decodeProcIpv4(e) {
           ]);
     this.ip(["route", "flush", "cache"]);
     if (!this.directRoutesActive(e)) {
-      /* Transient route-cache flake observed on webOS 5: one immediate
-         recheck before aborting the whole connect attempt. */
+      /* Transient netlink/cache propagation on webOS 5: wait briefly,
+         flush once more, then recheck before aborting the whole connect. */
+      var verifyAfter = Date.now() + 250;
+      while (Date.now() < verifyAfter) {}
+      this.ip(["route", "flush", "cache"]);
       if (!this.directRoutesActive(e))
         throw err("ROUTE_FAILED", "direct routes captured by tunnel");
       this.logger &&
