@@ -51,7 +51,7 @@ function RouteManager(e) {
           logger: this.logger,
           leaseFile: path.join(
             path.dirname(e.stateFile),
-            "netguard-" + this.core + ".lease",
+            "netguard-" + this.core + ".lease"
           ),
           flagFile: e.netguardFlagFile,
           searchDirs: e.netguardDirs,
@@ -129,7 +129,7 @@ function decodeProcIpv4(e) {
     } catch (armError) {
       throw err(
         "GUARDIAN_UNAVAILABLE",
-        armError && armError.code ? armError.code : "arm failed",
+        armError && armError.code ? armError.code : "arm failed"
       );
     }
     return !0;
@@ -533,8 +533,8 @@ function decodeProcIpv4(e) {
           u[IPV6_BLOCK_ROUTES[t]] &&
           this.ip(
             ["-6", "route", "replace"].concat(
-              String(u[IPV6_BLOCK_ROUTES[t]]).split(/\s+/),
-            ),
+              String(u[IPV6_BLOCK_ROUTES[t]]).split(/\s+/)
+            )
           ));
     if (!e.preserveCurrentNetwork)
       for (t = 0; t < a.length; t++)
@@ -545,7 +545,7 @@ function decodeProcIpv4(e) {
           this.ip(["route", "del", r.prefix]),
           n[r.prefix] &&
             this.ip(
-              ["route", "replace"].concat(String(n[r.prefix]).split(/\s+/)),
+              ["route", "replace"].concat(String(n[r.prefix]).split(/\s+/))
             ));
     return (
       this.ip(["route", "flush", "dev", this.tunName]),

@@ -39,10 +39,10 @@ function serializeLease(r) {
   e.push("EDITION=" + quoteLeaseValue(r.edition || ""));
   e.push("TUN_IF=" + quoteLeaseValue(r.tunIf || ""));
   e.push(
-    "RULE_PREF=" + quoteLeaseValue(null == r.rulePref ? "" : String(r.rulePref)),
+    "RULE_PREF=" + quoteLeaseValue(null == r.rulePref ? "" : String(r.rulePref))
   );
   e.push(
-    "RULE_TABLE=" + quoteLeaseValue(null == r.ruleTable ? "" : String(r.ruleTable)),
+    "RULE_TABLE=" + quoteLeaseValue(null == r.ruleTable ? "" : String(r.ruleTable))
   );
   e.push("V6_RULE=" + (r.v6Rule ? "1" : "0"));
   e.push("SPLIT_V4=" + quoteLeaseValue((r.splitV4 || []).join(",")));
@@ -78,8 +78,8 @@ function GuardianClient(r) {
           ? r.searchDirs.map(function (e) {
               return path.join(e, "alcyone-netguard");
             })
-          : [],
-      ),
+          : []
+      )
     );
   this.enabled = void 0 !== r.enabled
     ? !!r.enabled
@@ -100,7 +100,7 @@ function GuardianClient(r) {
   var r = childProcess.spawn(
     this.binaryPath,
     ["--lease", this.leaseFile],
-    { detached: !0, stdio: "ignore" },
+    { detached: !0, stdio: "ignore" }
   );
   return (r.unref(), r);
 }),

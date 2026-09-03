@@ -120,7 +120,7 @@ function resolve(e, r, t) {
         return c(
           errors.isAlcyoneError(e)
             ? e
-            : err("ENDPOINT_RESOLUTION_FAILED", "invalid endpoint result"),
+            : err("ENDPOINT_RESOLUTION_FAILED", "invalid endpoint result")
         );
       }
       c(null, e);
@@ -193,7 +193,7 @@ function resolve(e, r, t) {
       function () {
         g("endpoint lookup timed out");
       },
-      Math.max(1, s),
+      Math.max(1, s)
     ),
       i = 0;
     i < p.length;

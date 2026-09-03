@@ -134,13 +134,13 @@ function normalizeYamlList(e) {
 function cleanServerName(e) {
   return safeText(
     (e = (e = htmlEntityDecode(
-      percentDecodeLoose(decodeUrlPart(String(null == e ? "" : e))),
+      percentDecodeLoose(decodeUrlPart(String(null == e ? "" : e)))
     ))
       .replace(/[\r\n\t]+/g, " ")
       .replace(/^['"`]+|['"`]+$/g, "")
       .replace(/\s+/g, " ")
       .trim()),
-    120,
+    120
   );
 }
 function isGenericName(e) {
@@ -158,7 +158,7 @@ function isGenericName(e) {
     "undefined" === r ||
     "null" === r ||
     /^(proxy|outbound|server|node|vless|vmess|trojan|ss|socks|hysteria2?)[\s._-]*\d+$/i.test(
-      r,
+      r
     )
   );
 }
@@ -388,7 +388,7 @@ function buildVlessLink(e) {
     pushParam(
       a,
       "fp",
-      e.fp || e.fingerprint || e.clientFingerprint || e.client_fingerprint,
+      e.fp || e.fingerprint || e.clientFingerprint || e.client_fingerprint
     ),
     pushParam(a, "pbk", e.pbk || e.publicKey || e.public_key),
     pushParam(a, "sid", e.sid || e.shortId || e.short_id),
@@ -399,7 +399,7 @@ function buildVlessLink(e) {
     pushParam(
       a,
       "serviceName",
-      e.serviceName || e.grpcServiceName || e.grpc_service_name,
+      e.serviceName || e.grpcServiceName || e.grpc_service_name
     ),
     pushParam(a, "mode", e.mode),
     pushParam(a, "alpn", e.alpn),
@@ -427,13 +427,13 @@ function buildHysteria2Link(e) {
       "insecure",
       truthy(e.insecure || e["skip-cert-verify"] || e.skipCertVerify)
         ? "1"
-        : "",
+        : ""
     ),
     pushParam(a, "obfs", e.obfs),
     pushParam(
       a,
       "obfs-password",
-      e.obfsPassword || e["obfs-password"] || e.obfs_password,
+      e.obfsPassword || e["obfs-password"] || e.obfs_password
     ),
     pushParam(a, "alpn", e.alpn),
     pushParam(a, "upmbps", e.up || e.upmbps || e["up-mbps"]),
@@ -470,7 +470,7 @@ function buildTrojanLink(e) {
       "allowInsecure",
       truthy(e.insecure || e["skip-cert-verify"] || e.skipCertVerify)
         ? "1"
-        : "",
+        : ""
     ),
     "trojan://" +
       encodeURIComponent(s) +
@@ -563,7 +563,7 @@ function buildSocksLink(e) {
 function addUniqueLink(e, r, t) {
   if (
     ((t = htmlEntityDecode(
-      (t = safeText(t, 16e3).replace(/^["'`]+|["'`,;\]\)]+$/g, "")),
+      (t = safeText(t, 16e3).replace(/^["'`]+|["'`,;\]\)]+$/g, ""))
     )),
     /^(vless|hy2|hysteria2|hysteria|trojan|vmess|ss|socks5?):\/\//i.test(t))
   ) {
@@ -667,7 +667,7 @@ function parseClashVless(e, r, t) {
             serviceName: L.serviceName,
             mode: L.mode,
             alpn: L.alpn,
-          }),
+          })
         )
       : "hysteria2" === N || "hy2" === N || "hysteria" === N
         ? addUniqueLink(
@@ -685,7 +685,7 @@ function parseClashVless(e, r, t) {
               alpn: L.alpn,
               up: L.up,
               down: L.down,
-            }),
+            })
           )
         : "trojan" === N
           ? addUniqueLink(
@@ -704,7 +704,7 @@ function parseClashVless(e, r, t) {
                 insecure: L.insecure,
                 alpn: L.alpn,
                 fp: L.fp,
-              }),
+              })
             )
           : "ss" === N
             ? addUniqueLink(
@@ -716,7 +716,7 @@ function parseClashVless(e, r, t) {
                   password: L.password,
                   host: L.host,
                   port: L.port,
-                }),
+                })
               )
             : "vmess" === N
               ? addUniqueLink(
@@ -736,7 +736,7 @@ function parseClashVless(e, r, t) {
                     hostHeader: L.hostHeader,
                     alpn: L.alpn,
                     fp: L.fp,
-                  }),
+                  })
                 )
               : ("socks5" !== N && "socks" !== N) ||
                 addUniqueLink(
@@ -748,7 +748,7 @@ function parseClashVless(e, r, t) {
                     pass: L.password,
                     host: L.host,
                     port: L.port,
-                  }),
+                  })
                 );
   }
 }
@@ -775,7 +775,7 @@ function parseJsonVless(e, r, t) {
           e.label,
           e.displayName,
           e.display_name,
-          e.tag,
+          e.tag
         )
       : "";
   }
@@ -800,7 +800,7 @@ function parseJsonVless(e, r, t) {
               e.meta && e.meta.name,
               e.meta && e.meta.remarks,
               e.metadata && e.metadata.name,
-              e.metadata && e.metadata.remarks,
+              e.metadata && e.metadata.remarks
             )
           : "";
       })(s)),
@@ -829,7 +829,7 @@ function parseJsonVless(e, r, t) {
             hostHeader: m.headers && (m.headers.Host || m.headers.host),
             serviceName: m.service_name || m.serviceName,
             mode: m.mode,
-          }),
+          })
         );
       } else if ("hysteria2" === c || "hy2" === c || "hysteria" === c) {
         var h = s.tls || {},
@@ -849,7 +849,7 @@ function parseJsonVless(e, r, t) {
             alpn: h.alpn,
             up: s.up_mbps || s.upmbps,
             down: s.down_mbps || s.downmbps,
-          }),
+          })
         );
       } else if ("trojan" === c) {
         var g = s.tls || {},
@@ -870,7 +870,7 @@ function parseJsonVless(e, r, t) {
             serviceName: y.service_name || y.serviceName,
             alpn: g.alpn,
             fp: g.utls && g.utls.fingerprint,
-          }),
+          })
         );
       } else if ("vmess" === c) {
         var v = s.tls || {},
@@ -892,7 +892,7 @@ function parseJsonVless(e, r, t) {
             hostHeader: k.headers && (k.headers.Host || k.headers.host),
             alpn: v.alpn,
             fp: v.utls && v.utls.fingerprint,
-          }),
+          })
         );
       } else
         "shadowsocks" === c ||
@@ -907,7 +907,7 @@ function parseJsonVless(e, r, t) {
                 password: s.password,
                 host: s.server || s.address,
                 port: s.server_port || s.port,
-              }),
+              })
             )
           : ("socks" !== c && "socks5" !== c) ||
             addUniqueLink(
@@ -919,7 +919,7 @@ function parseJsonVless(e, r, t) {
                 pass: s.password,
                 host: s.server || s.address,
                 port: s.server_port || s.port,
-              }),
+              })
             );
       if (
         "vless" === String(s.protocol || "").toLowerCase() &&
@@ -948,7 +948,7 @@ function parseJsonVless(e, r, t) {
                 name: jsonProfileName(
                   descriptiveName(o(s), a.email),
                   n,
-                  e.address,
+                  e.address
                 ),
                 uuid: a.id,
                 host: e.address,
@@ -965,7 +965,7 @@ function parseJsonVless(e, r, t) {
                 hostHeader: f,
                 serviceName: c.serviceName || c.service_name,
                 mode: m.mode,
-              }),
+              })
             );
           });
         });
@@ -987,7 +987,7 @@ function parseJsonVless(e, r, t) {
                 name: jsonProfileName(
                   descriptiveName(o(s), a.email),
                   n,
-                  e.address,
+                  e.address
                 ),
                 uuid: a.id,
                 host: e.address,
@@ -1001,7 +1001,7 @@ function parseJsonVless(e, r, t) {
                 hostHeader: c.headers && (c.headers.Host || c.headers.host),
                 alpn: p.alpn,
                 fp: p.fingerprint,
-              }),
+              })
             );
           });
         });
@@ -1022,7 +1022,7 @@ function parseJsonVless(e, r, t) {
               name: jsonProfileName(
                 descriptiveName(o(s), e.email),
                 n,
-                e.address,
+                e.address
               ),
               password: e.password,
               host: e.address,
@@ -1034,7 +1034,7 @@ function parseJsonVless(e, r, t) {
               path: l.path,
               hostHeader: l.headers && (l.headers.Host || l.headers.host),
               serviceName: p.serviceName,
-            }),
+            })
           );
         });
       else if (
@@ -1052,7 +1052,7 @@ function parseJsonVless(e, r, t) {
               password: e.password,
               host: e.address,
               port: e.port,
-            }),
+            })
           );
         });
       else if (
@@ -1071,7 +1071,7 @@ function parseJsonVless(e, r, t) {
               pass: a.pass,
               host: e.address,
               port: e.port,
-            }),
+            })
           );
         });
       else if (
@@ -1093,7 +1093,7 @@ function parseJsonVless(e, r, t) {
             obfs: b.obfs && b.obfs.type,
             obfsPassword: b.obfs && b.obfs.password,
             alpn: S.alpn,
-          }),
+          })
         );
       }
       for (i in s) Object.prototype.hasOwnProperty.call(s, i) && e(s[i], l);
@@ -1940,7 +1940,7 @@ function detectCountry(e) {
   if (t) {
     var s = String.fromCharCode(
       97 + t[0].charCodeAt(1) - 56806,
-      97 + t[0].charCodeAt(3) - 56806,
+      97 + t[0].charCodeAt(3) - 56806
     );
     if (countries.isSupported(s)) return s;
   }
@@ -1978,7 +1978,7 @@ function extractProxyLinks(e) {
   for (
     t =
       o.match(
-        /(?:vless|hy2|hysteria2|hysteria|trojan|vmess|ss|socks5?):\/\/[^\s<>'"`]+/gi,
+        /(?:vless|hy2|hysteria2|hysteria|trojan|vmess|ss|socks5?):\/\/[^\s<>'"`]+/gi
       ) || [],
       s = 0;
     s < t.length;
@@ -1991,7 +1991,7 @@ function extractProxyLinks(e) {
         .replace(/\\u0026/g, "&")
         .replace(/\\\//g, "/")
         .match(
-          /(?:vless|hy2|hysteria2|hysteria|trojan|vmess|ss|socks5?):\/\/[^\s<>'"`]+/gi,
+          /(?:vless|hy2|hysteria2|hysteria|trojan|vmess|ss|socks5?):\/\/[^\s<>'"`]+/gi
         ) || [],
       s = 0;
     s < t.length;
@@ -2018,10 +2018,10 @@ function fullXrayProfile(e, r) {
     o.length
       ? ((t = parseProxyLink(o[0])),
         (s = cleanServerName(
-          e.remarks || e.remark || e.name || e.ps || t.name,
+          e.remarks || e.remark || e.name || e.ps || t.name
         )) || (s = t.host || "VPN #" + (r + 1)),
         (a = cleanServerName(
-          e.id || e.profileId || e.profile_id || e.uuid || "",
+          e.id || e.profileId || e.profile_id || e.uuid || ""
         )),
         {
           link: o[0],

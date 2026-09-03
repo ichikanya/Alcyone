@@ -22,9 +22,9 @@
         "rootRequired": true,
         "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.2.2/Alcyone-XRay_4.2.2.ipk",
         "ipkHash": {
-          "sha256": "cb73c95dca8b889dc77dab712e1072b6aa3b82ddfc2a940955d0dd7b2d8ede03"
+          "sha256": "0b6bbf616c74538fe881d04a266cdb8473ac9cf21be6866ab7fff76396594eeb"
         },
-        "ipkSize": 22154250
+        "ipkSize": 22154244
       },
       "pool": "main",
       "shortDescription": "XRay edition for large subscriptions, XHTTP, and complete configurations.",
@@ -46,7 +46,7 @@
         "rootRequired": true,
         "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.2.2/Alcyone-sing-box_4.2.2.ipk",
         "ipkHash": {
-          "sha256": "fedae28fc2a949e9ce31fef3400a3f185cfcfdc796d5f623ccabc9cbe00b9f65"
+          "sha256": "a84d5dd510fc8d63319aa04d7d67dc66141771687df049add7239418b5b77e84"
         },
         "ipkSize": 12069746
       },

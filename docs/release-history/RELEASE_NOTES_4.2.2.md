@@ -23,6 +23,9 @@ and capability-based fallbacks for newer webOS generations.
   than deleted.
 - Kept XRay and sing-box isolated with edition-owned TUN devices and strictly
   owned rollback state.
+- Restored strict Node.js 0.12.2 syntax compatibility across the service and
+  now verifies all 46 service files plus 13 runtime scenarios with that exact
+  legacy engine in CI.
 - Verified the final XRay package on the target webOS 4.x and 5.x televisions
   with instrumented YouTube testing and multi-hour real sessions. Root access,
   profiles, Alcyone and Homebrew Channel remained intact.

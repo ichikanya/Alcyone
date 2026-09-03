@@ -60,7 +60,7 @@ function getHwid(t, e) {
         .createHash("sha256")
         .update("alcyone:" + i, "utf8")
         .digest("hex")
-        .slice(0, 32),
+        .slice(0, 32)
     );
   } catch (t) {
     return e(null, "");
@@ -93,7 +93,7 @@ function filterSubscriptionResult(t, e, r) {
   var o = subscriptionCompat.filterDescriptors(t.edition, e.imported),
     i = subscriptionCompat.mergeSkippedReasons(
       o.skippedReasons,
-      subscriptionCompat.summarizeUnsupportedProtocols(e.unsupportedProtocols),
+      subscriptionCompat.summarizeUnsupportedProtocols(e.unsupportedProtocols)
     );
   return (
     (r = r || {}),
@@ -108,7 +108,7 @@ function requireImportable(t) {
   if (t && t.skippedReasons && t.skippedReasons.length)
     throw err(
       "UNSUPPORTED_SUBSCRIPTION_PROTOCOL",
-      "no protocols supported by this edition",
+      "no protocols supported by this edition"
     );
   throw err("NO_SERVERS_FOUND", "no supported servers");
 }
@@ -230,8 +230,8 @@ function requireImportable(t) {
       return e(
         err(
           "ILLEGAL_STATE",
-          "restart is only available under the platform launcher",
-        ),
+          "restart is only available under the platform launcher"
+        )
       );
     (r.requestRestart("restartService"),
       e(null, { restarting: !0, privilege: privilege.probe(r.paths) }));
@@ -335,7 +335,7 @@ function requireImportable(t) {
                   o,
                   l.imported,
                   a.headers,
-                  s,
+                  s
                 )));
             } catch (t) {
               return e(t);
@@ -353,7 +353,7 @@ function requireImportable(t) {
                 warnings: a.warnings || [],
               }));
           },
-          s,
+          s
         );
       }));
   })),
@@ -405,7 +405,7 @@ function requireImportable(t) {
                   o.name,
                   a.imported,
                   r.headers,
-                  d,
+                  d
                 )),
                 c.push({
                   subscriptionId: i.subscription.id,
@@ -420,7 +420,7 @@ function requireImportable(t) {
             }
             t();
           },
-          d,
+          d
         );
       })();
     });
@@ -439,7 +439,7 @@ function requireImportable(t) {
   (Api.prototype.deleteSubscription = guard(function (t, e) {
     (validate.rejectUnknown(validate.requireObject(t), ["subscriptionId"]),
       this.ctx.store.deleteSubscription(
-        validate.profileId(t, "subscriptionId", !0),
+        validate.profileId(t, "subscriptionId", !0)
       ),
       this.reconcileAutostart(),
       e(null, {}));
@@ -457,7 +457,7 @@ function requireImportable(t) {
             compatMode: !0,
             providerHwid: i.providerHwid,
           },
-          o,
+          o
         )
       : parsers.PROTO_RE.test(t)
         ? this.importLink({ link: t, name: e }, o)
@@ -623,14 +623,14 @@ function requireImportable(t) {
         var n = validate.profileId(
           { profileId: t.profileIds[o] },
           "profileId",
-          !0,
+          !0
         );
         i[n] || ((i[n] = !0), r.push(n));
       }
       if (r.length > 12)
         throw err(
           "INVALID_PARAMS",
-          "profileIds must contain at most 12 unique ids",
+          "profileIds must contain at most 12 unique ids"
         );
     }
     this.ctx.diagnostics.probeProfiles(
@@ -638,7 +638,7 @@ function requireImportable(t) {
         if (t) return e(t);
         e(null, { probes: r });
       },
-      void 0 === r ? {} : { profileIds: r },
+      void 0 === r ? {} : { profileIds: r }
     );
   })),
   (Api.prototype.setConnectionMode = guard(function (t, e) {
@@ -654,8 +654,8 @@ function requireImportable(t) {
       return e(
         err(
           "MODE_CHANGE_REQUIRES_DISCONNECT",
-          "disconnect before changing mode",
-        ),
+          "disconnect before changing mode"
+        )
       );
     !(function () {
       try {

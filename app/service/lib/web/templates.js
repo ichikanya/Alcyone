@@ -202,7 +202,7 @@ function importerPage(e, i) {
           esc(s.id) +
           "')\">" +
           esc(t(e, "row.delete")) +
-          "</button></div></div>",
+          "</button></div></div>"
       ));
   var d = c.length
     ? c.join("")
@@ -228,7 +228,7 @@ function importerPage(e, i) {
           esc(r.id) +
           "')\">" +
           esc(t(e, "row.delete")) +
-          "</button></div></div>",
+          "</button></div></div>"
       ));
   var l = c.length
       ? c.join("")

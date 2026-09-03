@@ -118,7 +118,7 @@ var context = {
       setSubscriptionHwid: function (e, r, t) {
         api.setSubscriptionHwid(
           { subscriptionId: e, providerHwid: r },
-          t,
+          t
         );
       },
       deleteSubscription: function (e, r) {
@@ -304,7 +304,7 @@ function main() {
     return (
       startup(),
       void logger.warn(
-        "webos-service unavailable, running without the Luna bus",
+        "webos-service unavailable, running without the Luna bus"
       )
     );
   }

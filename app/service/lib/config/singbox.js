@@ -29,7 +29,7 @@ function tlsFor(t, r, e) {
           enabled: !0,
           server_name: t.sni || t.serverName || t.servername || t.peer || r,
           insecure: parsers.truthy(
-            t.allowInsecure || t.insecure || t["skip-cert-verify"],
+            t.allowInsecure || t.insecure || t["skip-cert-verify"]
           ),
         }),
         t.alpn && (s.alpn = String(t.alpn).split(",").filter(Boolean)),
@@ -111,7 +111,7 @@ function outboundFor(t) {
           fp: n.fp || n.fingerprint,
         },
         s.host,
-        !0,
+        !0
       )),
       n.obfs &&
         ((p.obfs = { type: n.obfs }),
@@ -214,7 +214,7 @@ function applyDns(t, r) {
         (o =
           "[object Array]" === Object.prototype.toString.call(e.servers)
             ? e.servers.slice(0)
-            : []),
+            : [])
       )),
       o.push({
         type: "udp",
@@ -266,9 +266,9 @@ function buildTun(t, r, e) {
             rules: [{ ip_is_private: !0, action: "route", outbound: "direct" }],
           },
         },
-        e.dnsServer,
+        e.dnsServer
       ),
-      r,
+      r
     )
   );
 }

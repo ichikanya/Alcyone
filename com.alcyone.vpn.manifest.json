@@ -9,7 +9,7 @@
   "rootRequired": true,
   "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.2.2/Alcyone-XRay_4.2.2.ipk",
   "ipkHash": {
-    "sha256": "cb73c95dca8b889dc77dab712e1072b6aa3b82ddfc2a940955d0dd7b2d8ede03"
+    "sha256": "0b6bbf616c74538fe881d04a266cdb8473ac9cf21be6866ab7fff76396594eeb"
   },
-  "ipkSize": 22154250
+  "ipkSize": 22154244
 }

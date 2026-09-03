@@ -153,9 +153,9 @@ PolicyRoutes.prototype.prepare = function (state) {
   state.policy.linkRoutes = parseLinkRoutes(
     this.run(
       ["route", "show", "table", "main", "scope", "link"],
-      false,
+      false
     ).stdout,
-    state.original.device,
+    state.original.device
   );
   /* Unsupported/empty discovery falls back to legacy before takeover. It is
      safer to decline policy routing than to make LAN recovery depend on a
@@ -165,7 +165,7 @@ PolicyRoutes.prototype.prepare = function (state) {
   for (i = 0; i < state.serverAddresses.length; i++) {
     path = parseRouteGet(
       this.run(["route", "get", state.serverAddresses[i]], true).stdout,
-      state.original,
+      state.original
     );
     if (!path.device || path.device === this.tunName)
       throw err("ROUTE_FAILED", "proxy endpoint has no physical route");
@@ -202,7 +202,7 @@ PolicyRoutes.prototype.linkRoutesPhysical = function (state) {
   for (i = 0; i < policy.linkRoutes.length; i++) {
     result = this.run(
       ["route", "show", "table", String(policy.table), "exact", policy.linkRoutes[i].prefix],
-      false,
+      false
     );
     if (
       result.code !== 0 ||

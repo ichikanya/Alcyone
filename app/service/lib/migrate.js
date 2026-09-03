@@ -185,11 +185,11 @@ function readPid(t) {
     atomic.ensureOwnedDir(s);
     copyRawToFile(
       this.paths.storeFile,
-      path.join(s, "profiles-" + o + "-" + t + ".json"),
+      path.join(s, "profiles-" + o + "-" + t + ".json")
     ) && n.push("profiles");
     copyRawToFile(
       this.paths.storeFile + ".tmp",
-      path.join(s, "profiles-" + o + "-tmp-" + t + ".json"),
+      path.join(s, "profiles-" + o + "-tmp-" + t + ".json")
     ) && n.push("tmp");
     try {
       i = fs.readdirSync(s);
@@ -221,13 +221,13 @@ function readPid(t) {
     if (((t = atomic.readJsonStrict(this.paths.storeFile)), !t.ok))
       throw errors.err(
         "STORE_UNRECOVERABLE",
-        "profile store is corrupt; upgrade blocked, raw file preserved",
+        "profile store is corrupt; upgrade blocked, raw file preserved"
       );
     if ("tmp" === t.source)
       try {
         atomic.writeFileAtomic(
           this.paths.storeFile,
-          JSON.stringify(t.value, null, 2),
+          JSON.stringify(t.value, null, 2)
         );
         this.logger.warn("profile store restored from interrupted write");
       } catch (t) {
@@ -423,7 +423,7 @@ function readPid(t) {
                   var r;
                   try {
                     r = t.procReadlink(
-                      path.join(t.procRoot, String(e), "exe"),
+                      path.join(t.procRoot, String(e), "exe")
                     );
                   } catch (t) {
                     return;

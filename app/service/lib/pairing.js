@@ -161,7 +161,7 @@ function PairingManager(e) {
         String(e || "")
           .toUpperCase()
           .replace(/[^A-Z0-9]/g, ""),
-        this.pairing.code,
+        this.pairing.code
       )
     )
       throw (this.recordFailure(t), err("UNAUTHORIZED", "invalid code"));

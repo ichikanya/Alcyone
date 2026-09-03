@@ -25,7 +25,7 @@ function scrubValue(e) {
           .replace(/[a-z0-9+.-]+:\/\/\S*/gi, "[uri]")
           .replace(
             /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
-            "[uuid]",
+            "[uuid]"
           )
           .replace(/[\u0000-\u001f\u007f]/g, " ")
           .slice(0, MAX_DETAIL);

@@ -200,7 +200,7 @@ Watchdog.prototype.checkResources = function (now) {
         " growth=" +
         maximumFdGrowth +
         " combined=" +
-        combinedFds,
+        combinedFds
     );
   /* EMFILE history on real devices: a core approaching its descriptor
      ceiling is a functional failure in progress, not a cosmetic warning.
@@ -209,7 +209,7 @@ Watchdog.prototype.checkResources = function (now) {
   if (this.fdCriticalSamples >= 2)
     return this.openIncident(
       "FD_EXHAUSTION_RISK",
-      "fd-ratio " + Math.round(maximumFdRatio * 100) + "% sustained",
+      "fd-ratio " + Math.round(maximumFdRatio * 100) + "% sustained"
     );
 
   if (combinedRss > 0) {

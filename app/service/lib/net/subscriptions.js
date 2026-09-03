@@ -128,7 +128,7 @@ function expandNested(e, r, t) {
                 }
                 e();
               }
-            },
+            }
           ));
       })(i[u++]);
     !(function () {

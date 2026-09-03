@@ -6,13 +6,13 @@ function scrub(e) {
   var r = String(null == e ? "" : e);
   return (r = (r = (r = (r = (r = r.replace(
     /[\u0000-\u001f\u007f]/g,
-    " ",
+    " "
   )).replace(/[a-z0-9+.-]+:\/\/\S*/gi, "[uri]")).replace(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
-    "[uuid]",
+    "[uuid]"
   )).replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "[address]")).replace(
     /(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}/gi,
-    "[hostname]",
+    "[hostname]"
   ));
 }
 function boundStream(e) {

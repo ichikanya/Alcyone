@@ -75,11 +75,11 @@ function resolveForConnection(n, r, e) {
     function () {
       c(timeoutError());
     },
-    Math.max(1, r - Date.now()),
+    Math.max(1, r - Date.now())
   )),
     (s = setTimeout(
       h,
-      Math.min(DNS_FALLBACK_GRACE_MS, Math.max(1, r - Date.now())),
+      Math.min(DNS_FALLBACK_GRACE_MS, Math.max(1, r - Date.now()))
     )));
   try {
     dns.lookup(n, 4, function (n, r, e) {

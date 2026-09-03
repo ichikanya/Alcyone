@@ -162,7 +162,7 @@ function connectedNetwork(e, r) {
         n.value.interfaceName ||
           n.value.ifName ||
           n.value.interface ||
-          n.value.device,
+          n.value.device
       )),
       r &&
         r.device &&
@@ -171,7 +171,7 @@ function connectedNetwork(e, r) {
         ((a = {
           kind: n.kind,
           serviceId: cleanString(
-            n.value.serviceId || n.value.service || n.value.id,
+            n.value.serviceId || n.value.service || n.value.id
           ),
           ssid: cleanString(n.value.ssid || n.value.SSID),
           interfaceName: i,
@@ -288,7 +288,7 @@ function SystemProxyManager(e) {
       if (a >= i.length)
         return l(
           n ||
-            err("SYSTEM_PROXY_UNAVAILABLE", "connection manager unavailable"),
+            err("SYSTEM_PROXY_UNAVAILABLE", "connection manager unavailable")
         );
       if (
         ((s = i[a++]),
@@ -302,16 +302,16 @@ function SystemProxyManager(e) {
                 t(
                   err(
                     "SYSTEM_PROXY_UNAVAILABLE",
-                    "connection manager rejected request",
-                  ),
+                    "connection manager rejected request"
+                  )
                 )
               );
             if (!1 === r.returnValue)
               return l(
                 err(
                   "SYSTEM_PROXY_UNAVAILABLE",
-                  "connection manager rejected request",
-                ),
+                  "connection manager rejected request"
+                )
               );
             ((o.serviceUri = s), l(null, r));
           }
@@ -383,10 +383,10 @@ function SystemProxyManager(e) {
             : e(
                 err(
                   "SYSTEM_PROXY_UNAVAILABLE",
-                  "proxy lookup returned no result",
-                ),
+                  "proxy lookup returned no result"
+                )
               );
-      },
+      }
     );
   }),
   (SystemProxyManager.prototype.snapshot = function (e) {
@@ -404,8 +404,8 @@ function SystemProxyManager(e) {
               : e(
                   err(
                     "SYSTEM_PROXY_UNAVAILABLE",
-                    "original proxy cannot be read",
-                  ),
+                    "original proxy cannot be read"
+                  )
                 ))
           : e(err("SYSTEM_PROXY_UNAVAILABLE", "active network is ambiguous"));
     });
@@ -425,14 +425,14 @@ function SystemProxyManager(e) {
               : e(
                   err(
                     "SYSTEM_PROXY_RESTORE_FAILED",
-                    "live proxy configuration is unreadable",
-                  ),
+                    "live proxy configuration is unreadable"
+                  )
                 ))
           : e(
               err(
                 "SYSTEM_PROXY_RESTORE_PENDING",
-                "active network is ambiguous",
-              ),
+                "active network is ambiguous"
+              )
             );
     });
   }),
@@ -506,7 +506,7 @@ function SystemProxyManager(e) {
       throw err("SYSTEM_PROXY_UNAVAILABLE", "recovery hook identity invalid");
     (atomic.ensureSharedDir(
       path.dirname(this.hookFile),
-      atomic.SHARED_DIR_MODE,
+      atomic.SHARED_DIR_MODE
     ),
       atomic.writeSharedFileAtomic(this.hookFile, e, 493));
   }),
@@ -528,8 +528,8 @@ function SystemProxyManager(e) {
         return r(
           err(
             "SYSTEM_PROXY_RESTORE_PENDING",
-            "stale proxy recovery is pending",
-          ),
+            "stale proxy recovery is pending"
+          )
         );
       try {
         ((i = {
@@ -605,8 +605,8 @@ function SystemProxyManager(e) {
           return r(
             err(
               "SYSTEM_PROXY_VERIFY_FAILED",
-              "system proxy verification failed",
-            ),
+              "system proxy verification failed"
+            )
           );
         r(null, { proxy: o });
       });
@@ -635,8 +635,8 @@ function SystemProxyManager(e) {
           return n(
             err(
               "SYSTEM_PROXY_VERIFY_FAILED",
-              "proxy traffic verification failed",
-            ),
+              "proxy traffic verification failed"
+            )
           );
         e && "function" == typeof e.on
           ? (e.on("end", function () {
@@ -646,12 +646,12 @@ function SystemProxyManager(e) {
               n(
                 err(
                   "SYSTEM_PROXY_VERIFY_FAILED",
-                  "proxy traffic verification failed",
-                ),
+                  "proxy traffic verification failed"
+                )
               );
             }))
           : n(null, "");
-      },
+      }
     )),
       (t = setTimeout(function () {
         try {
@@ -685,8 +685,8 @@ function SystemProxyManager(e) {
         return n(
           err(
             "SYSTEM_PROXY_RESTORE_PENDING",
-            "original network is unavailable",
-          ),
+            "original network is unavailable"
+          )
         );
       if (t.originalProxy && proxyEqual(o.proxy, t.originalProxy))
         return (r.clearState(), n(null));
@@ -698,16 +698,16 @@ function SystemProxyManager(e) {
                 return n(
                   err(
                     "SYSTEM_PROXY_RESTORE_FAILED",
-                    "original proxy could not be restored",
-                  ),
+                    "original proxy could not be restored"
+                  )
                 );
               r.readCurrent(function (e, o) {
                 if (e || !o || !proxyEqual(o.proxy, t.originalProxy))
                   return n(
                     err(
                       "SYSTEM_PROXY_RESTORE_FAILED",
-                      "proxy restoration could not be verified",
-                    ),
+                      "proxy restoration could not be verified"
+                    )
                   );
                 (r.clearState(), n(null));
               });
@@ -715,12 +715,12 @@ function SystemProxyManager(e) {
           : n(
               err(
                 "SYSTEM_PROXY_RESTORE_CONFLICT",
-                "system proxy changed externally",
-              ),
+                "system proxy changed externally"
+              )
             );
       var i;
       n(
-        err("SYSTEM_PROXY_RESTORE_CONFLICT", "system proxy changed externally"),
+        err("SYSTEM_PROXY_RESTORE_CONFLICT", "system proxy changed externally")
       );
     });
   }),

@@ -190,7 +190,7 @@ function waitFor(e, r, t) {
       if (ownedPids.length)
         throw err(
           "ALREADY_RUNNING",
-          e + " still exists as pid " + ownedPids.join(","),
+          e + " still exists as pid " + ownedPids.join(",")
         );
     }
     var l =

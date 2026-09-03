@@ -18,7 +18,7 @@ function directoryIsSafe(r) {
 function repairError() {
   return err(
     "SHARED_DIRECTORY_REPAIR_FAILED",
-    "shared directory permissions could not be repaired",
+    "shared directory permissions could not be repaired"
   );
 }
 function repair(r) {

@@ -110,7 +110,7 @@ function outboundFor(t) {
         serverName:
           (e = d).sni || e.peer || e.serverName || e.servername || u.host,
         allowInsecure: parsers.truthy(
-          e.insecure || e.allowInsecure || e["skip-cert-verify"],
+          e.insecure || e.allowInsecure || e["skip-cert-verify"]
         ),
       }),
       (s = e.alpn ? String(e.alpn).split(",").filter(Boolean) : ["h3"])
@@ -131,7 +131,7 @@ function outboundFor(t) {
       )
         throw err(
           "UNSUPPORTED_TRANSPORT",
-          "only Hysteria2 Salamander obfuscation is supported",
+          "only Hysteria2 Salamander obfuscation is supported"
         );
       o.finalmask = {
         udp: [{ type: "salamander", settings: { password: String(i) } }],
@@ -216,7 +216,7 @@ function applyXhttpLimits(t) {
         ? t.downloadSettings
         : null) &&
       applyXhttpLimits(
-        r.xhttpSettings || r.splitHTTPSettings || r.splithttpSettings,
+        r.xhttpSettings || r.splitHTTPSettings || r.splithttpSettings
       ));
 }
 function boundedPolicyValue(t, e, r, s) {
@@ -409,7 +409,7 @@ function buildFullConfig(t, e, r) {
     (r = r || {}),
     applyDirectInterface(
       applyBootstrap(applyDns(applyResourcePolicy(o), r.dnsServer), e),
-      r.physicalInterface,
+      r.physicalInterface
     )
   );
 }
@@ -437,7 +437,7 @@ function buildTun(t, e, r) {
     t.fullConfig
       ? withNativeTun(
           r,
-          buildFullConfig(t.fullConfig, e, r),
+          buildFullConfig(t.fullConfig, e, r)
         )
       : withNativeTun(
           r,
@@ -475,12 +475,12 @@ function buildTun(t, e, r) {
                     ],
                   },
                 }),
-                r.dnsServer,
+                r.dnsServer
               ),
-              e,
+              e
             ),
-            r.physicalInterface,
-          ),
+            r.physicalInterface
+          )
         )
   );
 }
@@ -571,7 +571,7 @@ function endpoints(t) {
         d(
           n.address || o.address || o.server,
           n.port || o.port || o.server_port,
-          u(o),
+          u(o)
         );
       }
     return a;
@@ -580,7 +580,7 @@ function endpoints(t) {
     d(
       (l = parsers.parseProxyLink(t.link)).host,
       l.port,
-      "hysteria2" === l.protocol ? "udp" : "tcp",
+      "hysteria2" === l.protocol ? "udp" : "tcp"
     ),
     a
   );

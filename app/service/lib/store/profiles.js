@@ -86,7 +86,7 @@ function normalizeSkippedReasons(r) {
           })
         : "UNSUPPORTED_PROTOCOL" === o.code &&
             /^(wireguard|wg|tuic|hysteria|hysteria1)$/.test(
-              String(o.protocol || "").toLowerCase(),
+              String(o.protocol || "").toLowerCase()
             ) &&
             t &&
             i.push({
@@ -174,10 +174,10 @@ function normalize(r) {
           ? (r.subscriptions[e].providerHwid = t)
           : delete r.subscriptions[e].providerHwid,
         (r.subscriptions[e].skippedReasons = normalizeSkippedReasons(
-          r.subscriptions[e].skippedReasons,
+          r.subscriptions[e].skippedReasons
         )),
         (r.subscriptions[e].skippedCount = skippedCountFor(
-          r.subscriptions[e].skippedReasons,
+          r.subscriptions[e].skippedReasons
         )))
       : r.subscriptions.splice(e, 1);
   if (
@@ -271,7 +271,7 @@ function sanitizeSubscription(r) {
   if (((t = atomic.readJsonStrict(this.file)), !t.ok))
     throw err(
       "STORE_CORRUPT",
-      "profile store is unreadable; refusing to return an empty default",
+      "profile store is unreadable; refusing to return an empty default"
     );
   /* When only the interrupted-write sibling parsed, serve it: the next
      successful write() heals the canonical file from this content. */

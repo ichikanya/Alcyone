@@ -10,23 +10,23 @@ var events = require("events");
 
 var ROOT = path.join(__dirname, "..");
 var dnsResolver = require(
-  path.join(ROOT, "app", "service", "lib", "net", "dns-resolver.js"),
+  path.join(ROOT, "app", "service", "lib", "net", "dns-resolver.js")
 );
 var endpointBootstrap = require(
-  path.join(ROOT, "app", "service", "lib", "net", "endpoint-bootstrap.js"),
+  path.join(ROOT, "app", "service", "lib", "net", "endpoint-bootstrap.js")
 );
 var httpClient = require(
-  path.join(ROOT, "app", "service", "lib", "net", "http-client.js"),
+  path.join(ROOT, "app", "service", "lib", "net", "http-client.js")
 );
 var ssrf = require(path.join(ROOT, "app", "service", "lib", "net", "ssrf.js"));
 var subscriptions = require(
-  path.join(ROOT, "app", "service", "lib", "net", "subscriptions.js"),
+  path.join(ROOT, "app", "service", "lib", "net", "subscriptions.js")
 );
 var xrayConfig = require(
-  path.join(ROOT, "app", "service", "lib", "config", "xray.js"),
+  path.join(ROOT, "app", "service", "lib", "config", "xray.js")
 );
 var singboxConfig = require(
-  path.join(ROOT, "app", "service", "lib", "config", "singbox.js"),
+  path.join(ROOT, "app", "service", "lib", "config", "singbox.js")
 );
 
 var passed = 0;
@@ -55,7 +55,7 @@ function dnsCheck(next) {
     dns.resolve6 = real6;
     check(
       "DNS result shape works on Node 0.12.2",
-      !error && addresses.length === 1 && addresses[0].family === 4,
+      !error && addresses.length === 1 && addresses[0].family === 4
     );
     next();
   });
@@ -85,17 +85,17 @@ function endpointBootstrapCheck(next) {
           callbacks === 1 &&
           result.addresses.length === 2 &&
           result.entries.length === 1 &&
-          result.entries[0].targets.length === 2,
+          result.entries[0].targets.length === 2
       );
       check(
         "XRay bootstrap schema builds on Node 0.12.2",
         xray.dns.hosts["runtime.example"].length === 2 &&
-          xray.outbounds[0].streamSettings.sockopt.domainStrategy === "UseIP",
+          xray.outbounds[0].streamSettings.sockopt.domainStrategy === "UseIP"
       );
       check(
         "sing-box bootstrap schema builds on Node 0.12.2",
         singbox.dns.servers[0].type === "hosts" &&
-          singbox.outbounds[0].domain_resolver.strategy === "ipv4_only",
+          singbox.outbounds[0].domain_resolver.strategy === "ipv4_only"
       );
       next();
     },
@@ -112,7 +112,7 @@ function endpointBootstrapCheck(next) {
         },
       },
       timeoutMs: 100,
-    },
+    }
   );
 }
 
@@ -127,7 +127,7 @@ function decompressionCheck(next) {
     httpClient.decodeBody(compressed, "gzip", function (error) {
       check(
         "decompression limit works on Node 0.12.2",
-        !!error && error.code === "DECOMPRESSED_TOO_LARGE",
+        !!error && error.code === "DECOMPRESSED_TOO_LARGE"
       );
       next();
     });
@@ -154,10 +154,10 @@ function nestedFailureCheck(next) {
       httpClient.fetchUrl = original;
       check(
         "nested failure completes on Node 0.12.2",
-        !!error && callbacks === 1 && calls === 4,
+        !!error && callbacks === 1 && calls === 4
       );
       next();
-    },
+    }
   );
 }
 
@@ -227,7 +227,7 @@ function httpsRedirectCheck(next) {
       https.request = realRequest;
       check(
         "HTTPS redirect chain works on Node 0.12.2",
-        !error && requests.length === 2 && body === "vless://runtime.example",
+        !error && requests.length === 2 && body === "vless://runtime.example"
       );
       check(
         "approved IPv4 is pinned while Host and SNI keep the original name on Node 0.12.2",
@@ -237,38 +237,38 @@ function httpsRedirectCheck(next) {
           requests[0].headers.Host === "redirect-source.example" &&
           requests[1].host === "93.184.216.34" &&
           requests[1].servername === "redirect-target.example" &&
-          requests[1].headers.Host === "redirect-target.example",
+          requests[1].headers.Host === "redirect-target.example"
       );
       check(
         "cross-origin credentials are stripped on Node 0.12.2",
         requests.length === 2 &&
           !requests[1].headers.Authorization &&
-          !requests[1].headers.authorization,
+          !requests[1].headers.authorization
       );
       next();
-    },
+    }
   );
 }
 
 check(
   "bundled Mozilla CA roots load on Node 0.12.2",
-  httpClient.loadBundledCa() && httpClient.loadBundledCa().length === 119,
+  httpClient.loadBundledCa() && httpClient.loadBundledCa().length === 119
 );
 var runningNode012 = /^0\.12\./.test(String(process.versions.node || ""));
 check(
   "runtime selects the compatible ECDH curve policy",
   runningNode012
     ? httpClient.compatibleEcdhCurves() === null
-    : httpClient.compatibleEcdhCurves() === "prime256v1:secp384r1:secp521r1",
+    : httpClient.compatibleEcdhCurves() === "prime256v1:secp384r1:secp521r1"
 );
 
 var safeTransport = httpClient.transportDiagnostic(
   { code: "ECONNRESET", name: "Error" },
-  "tls-handshake",
+  "tls-handshake"
 );
 var scrubbedTransport = httpClient.transportDiagnostic(
   { code: "ECONNRESET secret.example/token", name: "Error\nsecret" },
-  "tls-handshake secret",
+  "tls-handshake secret"
 );
 check(
   "transport diagnostics are useful and secret-safe on Node 0.12.2",
@@ -277,21 +277,21 @@ check(
     safeTransport.tlsPhase === "tls-handshake" &&
     scrubbedTransport.transportErrorCode === "UNKNOWN" &&
     scrubbedTransport.transportErrorName === "Error" &&
-    scrubbedTransport.tlsPhase === "unknown",
+    scrubbedTransport.tlsPhase === "unknown"
 );
 
 var downgrade = null;
 try {
   httpClient.redirectUrl(
     ssrf.assertUrlAllowed("https://subscriptions.example.com/a"),
-    "http://subscriptions.example.com/b",
+    "http://subscriptions.example.com/b"
   );
 } catch (redirectError) {
   downgrade = redirectError;
 }
 check(
   "redirect resolution rejects HTTPS downgrade on Node 0.12.2",
-  !!downgrade && downgrade.code === "HTTPS_DOWNGRADE_REJECTED",
+  !!downgrade && downgrade.code === "HTTPS_DOWNGRADE_REJECTED"
 );
 
 httpsRedirectCheck(function () {

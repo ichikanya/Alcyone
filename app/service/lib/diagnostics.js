@@ -12,7 +12,7 @@ var net = require("net"),
   MAX_ADDRESSES_PER_ENDPOINT = 2,
   MAX_PARALLEL_JOBS = Math.max(
     1,
-    Math.floor(MAX_PARALLEL_PROBES / MAX_ADDRESSES_PER_ENDPOINT),
+    Math.floor(MAX_PARALLEL_PROBES / MAX_ADDRESSES_PER_ENDPOINT)
   ),
   IP_CHECK_URLS = [
     "https://ipinfo.io/ip",
@@ -213,7 +213,7 @@ function Diagnostics(t) {
               if (!e && /^[0-9a-fA-F.:]{3,45}$/.test(i)) return t(null, i);
               n();
             }
-          },
+          }
         );
       }
     })();

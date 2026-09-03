@@ -130,12 +130,12 @@ function elfMachine(e) {
       if (null === (i = elfMachine(r.file)))
         return err(
           "CORE_INTEGRITY_FAILED",
-          n[t] + " binary is not an ELF executable",
+          n[t] + " binary is not an ELF executable"
         );
       if (!machineMatchesRuntime(i, process.platform, process.arch))
         return err(
           "CORE_INTEGRITY_FAILED",
-          n[t] + " binary targets the wrong architecture",
+          n[t] + " binary targets the wrong architecture"
         );
     }
     return null;
@@ -181,7 +181,7 @@ function elfMachine(e) {
     for (e = 0; e < r.length; e++)
       ((t = this.locateAsset(r[e])),
         i.push(
-          r[e] + ":" + t.file + ":" + (t.size || 0) + ":" + (t.mtime || 0),
+          r[e] + ":" + t.file + ":" + (t.size || 0) + ":" + (t.mtime || 0)
         ));
     return i.join("|");
   }),
@@ -206,7 +206,7 @@ function elfMachine(e) {
           "ASSET_CORRUPT" === i.code
             ? err(
                 "ASSET_INTEGRITY_FAILED",
-                "routing asset failed its integrity check",
+                "routing asset failed its integrity check"
               )
             : err(i.code, "required routing asset missing");
         break;
@@ -224,17 +224,17 @@ function elfMachine(e) {
       : !1 === r.root
         ? err(
             "ELEVATION_REQUIRED",
-            "the Alcyone service is not running as uid 0",
+            "the Alcyone service is not running as uid 0"
           )
         : "SHARED_DIRECTORY_REPAIR_FAILED" === e.startupSafetyError
           ? err(
               "SHARED_DIRECTORY_REPAIR_FAILED",
-              "shared directory permissions could not be repaired",
+              "shared directory permissions could not be repaired"
             )
           : "STORE_UNRECOVERABLE" === e.startupSafetyError
             ? err(
                 "STORE_UNRECOVERABLE",
-                "profile store is corrupt; restore it from backups/profiles-*.json before connecting",
+                "profile store is corrupt; restore it from backups/profiles-*.json before connecting"
               )
             : (t = this.checkPackage()) || (t = this.checkCores(e.mode || "tun"))
             ? t

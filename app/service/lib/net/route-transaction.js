@@ -110,7 +110,7 @@ function RouteTransactionManager(r) {
     if (((o = this.load()), o && "RESTORED" !== o.state))
       throw err(
         "ILLEGAL_STATE",
-        "another route transaction is " + o.state + "; recover it first",
+        "another route transaction is " + o.state + "; recover it first"
       );
     return (
       (t = {
@@ -137,7 +137,7 @@ function RouteTransactionManager(r) {
     if (-1 === i.indexOf(r))
       throw err(
         "ILLEGAL_STATE",
-        "cannot move route transaction from " + o.state + " to " + r,
+        "cannot move route transaction from " + o.state + " to " + r
       );
     if (o.token !== e)
       throw err("ILLEGAL_STATE", "route transaction token mismatch");

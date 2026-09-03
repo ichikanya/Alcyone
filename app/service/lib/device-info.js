@@ -104,8 +104,8 @@ function deriveHwid(e) {
                   r.ndid || r.serialNumber,
                   r.modelName,
                   r.firmwareVersion,
-                  r.sdkVersion,
-                ),
+                  r.sdkVersion
+                )
               );
             try {
               i.service.call(
@@ -127,16 +127,16 @@ function deriveHwid(e) {
                         r.serialNumber,
                         r.modelName,
                         r.firmwareVersion,
-                        r.sdkVersion,
-                      ),
+                        r.sdkVersion
+                      )
                     );
                   i._fallbackDeviceInfo(e);
-                },
+                }
               );
             } catch (t) {
               i._fallbackDeviceInfo(e);
             }
-          },
+          }
         );
       } catch (e) {
         this.logger &&

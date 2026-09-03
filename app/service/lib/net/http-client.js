@@ -29,10 +29,10 @@ function loadBundledCa() {
       fs
         .readFileSync(
           path.join(__dirname, "..", "..", "certs", "cacert.pem"),
-          "utf8",
+          "utf8"
         )
         .match(
-          /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g,
+          /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g
         ) || [];
   } catch (e) {
     bundledCa = [];
@@ -58,9 +58,9 @@ function isTlsError(e) {
 function compatibleEcdhCurves() {
   return parseInt(
     String((process && process.versions && process.versions.node) || "0").split(
-      ".",
+      "."
     )[0],
-    10,
+    10
   ) >= 4
     ? COMPAT_ECDH_CURVES
     : null;
@@ -81,8 +81,8 @@ function resolveValidated(e, r, t) {
       return t(
         err(
           e && "TIMEOUT" === e.code ? "TIMEOUT" : "DNS_FAILED",
-          e && "TIMEOUT" === e.code ? "dns deadline exceeded" : "lookup failed",
-        ),
+          e && "TIMEOUT" === e.code ? "dns deadline exceeded" : "lookup failed"
+        )
       );
     try {
       ssrf.assertResolvedAddresses(r);
@@ -171,7 +171,7 @@ function redirectUrl(e, r) {
         stage: "redirect",
         protocol: protocolHint(n),
         originChanged: redirectOriginChanged(e, n),
-      },
+      }
     );
   }
   if ("https" === e.scheme && "http" === t.scheme)
@@ -205,7 +205,7 @@ function cookieState(e, r) {
   if (!e || !e.cookies || !r) return "";
   for (t = 0; t < e.cookies.length; t++)
     e.cookies[t].origin === r.origin && n.push(
-      e.cookies[t].name + "=" + e.cookies[t].value + ";" + e.cookies[t].path,
+      e.cookies[t].name + "=" + e.cookies[t].value + ";" + e.cookies[t].path
     );
   return n.sort().join("|");
 }
@@ -232,7 +232,7 @@ function cookieBytes(e) {
   for (r = 0; r < e.cookies.length; r++)
     t += Buffer.byteLength(
       e.cookies[r].name + "=" + e.cookies[r].value + e.cookies[r].path,
-      "utf8",
+      "utf8"
     );
   return t;
 }
@@ -348,7 +348,7 @@ function transportDiagnostic(e, r) {
   return {
     transportErrorCode: safeDiagnosticToken(
       e && (e.code || e.errno),
-      "UNKNOWN",
+      "UNKNOWN"
     ),
     transportErrorName: safeDiagnosticToken(e && e.name, "Error"),
     tlsPhase: safeDiagnosticToken(r, "unknown"),
@@ -371,12 +371,12 @@ function requestError(e, r, t, n, o, s) {
     c.transportErrorCode &&
       (d.transportErrorCode = safeDiagnosticToken(
         c.transportErrorCode,
-        "UNKNOWN",
+        "UNKNOWN"
       )),
     c.transportErrorName &&
       (d.transportErrorName = safeDiagnosticToken(
         c.transportErrorName,
-        "Error",
+        "Error"
       )),
     c.tlsPhase && (d.tlsPhase = safeDiagnosticToken(c.tlsPhase, "unknown")),
     "number" == typeof c.status &&
@@ -435,7 +435,7 @@ function fetchUrlNow(e, r, t) {
         redirectHop: s,
         protocol: n.scheme,
         originChanged: l,
-      }),
+      })
     );
   seen[stateKey] = !0;
   E = "dns-validation";
@@ -446,7 +446,7 @@ function fetchUrlNow(e, r, t) {
         p && p.destroy();
       } catch (e) {}
     },
-    Math.max(1, o - Date.now()),
+    Math.max(1, o - Date.now())
   );
   resolveValidated(n.hostname, o, function (e, r) {
     if (!c) {
@@ -509,8 +509,8 @@ function fetchUrlNow(e, r, t) {
                     E,
                     s + 1,
                     protocolHint(a),
-                    e && e.meta && e.meta.originChanged,
-                  ),
+                    e && e.meta && e.meta.originChanged
+                  )
                 )
               );
             }
@@ -527,8 +527,8 @@ function fetchUrlNow(e, r, t) {
                     "redirect",
                     s + 1,
                     protocolHint(a),
-                    !1,
-                  ),
+                    !1
+                  )
                 )
               );
             var nextHeaders = copyHeaders(i);
@@ -547,7 +547,7 @@ function fetchUrlNow(e, r, t) {
                   redirectStates: seen,
                   session: session,
                 },
-                t,
+                t
               )
             );
           }
@@ -561,7 +561,7 @@ function fetchUrlNow(e, r, t) {
                     ? err("PROVIDER_REJECTED", "403", { status: 403 })
                     : 429 === r
                       ? err("RATE_LIMITED", "429", { status: 429 })
-                      : err("HTTP_ERROR", String(r), { status: r }),
+                      : err("HTTP_ERROR", String(r), { status: r })
               )
             );
           ((E = "response-read"),
@@ -586,7 +586,7 @@ function fetchUrlNow(e, r, t) {
                     function (r, t) {
                       if ((d && clearTimeout(d), r)) return _(r);
                       _(null, t, e.headers || {});
-                    },
+                    }
                   ));
               }
             }),
@@ -596,8 +596,8 @@ function fetchUrlNow(e, r, t) {
                   err(
                     "NETWORK_ERROR",
                     (e && e.code) || "response failed",
-                    transportDiagnostic(e, f),
-                  ),
+                    transportDiagnostic(e, f)
+                  )
                 ));
             }),
             e.setTimeout(READ_TIMEOUT_MS, function () {
@@ -632,15 +632,15 @@ function fetchUrlNow(e, r, t) {
               err(
                 "TLS_CERTIFICATE_INVALID",
                 "certificate verification failed",
-                transportDiagnostic(e, f),
-              ),
+                transportDiagnostic(e, f)
+              )
             );
           _(
             err(
               "NETWORK_ERROR",
               e.code || "request failed",
-              transportDiagnostic(e, f),
-            ),
+              transportDiagnostic(e, f)
+            )
           );
         }),
         p.end());

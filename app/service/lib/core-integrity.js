@@ -24,7 +24,7 @@ function expectedFor(e) {
   if (!r || !/^[0-9a-f]{64}$/.test(r))
     throw err(
       "CORE_INTEGRITY_FAILED",
-      String(e || "core") + " has no pinned checksum",
+      String(e || "core") + " has no pinned checksum"
     );
   return r;
 }

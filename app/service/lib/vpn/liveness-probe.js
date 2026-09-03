@@ -33,7 +33,7 @@ function requestEndpoint(endpoint, deadlineMs, callback) {
        options object keeps the watchdog functional across the supported
        firmware range instead of turning every probe into a TypeError. */
     var requestOptions = urlLib.parse(
-      endpoint.url + separator + "alcyone=" + Date.now(),
+      endpoint.url + separator + "alcyone=" + Date.now()
     );
     requestOptions.headers = { Connection: "close", "Cache-Control": "no-cache" };
     request = https.get(requestOptions, function (response) {

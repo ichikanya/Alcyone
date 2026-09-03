@@ -233,7 +233,7 @@ function VpnManager(e) {
     )
       throw err(
         "MODE_CHANGE_REQUIRES_DISCONNECT",
-        "disconnect before changing mode",
+        "disconnect before changing mode"
       );
     return (
       this.store &&
@@ -492,7 +492,7 @@ function VpnManager(e) {
         function () {
           t.expireOperation(r);
         },
-        Math.max(1, this.connectTimeoutMs),
+        Math.max(1, this.connectTimeoutMs)
       )),
       r.deadlineTimer && r.deadlineTimer.unref && r.deadlineTimer.unref(),
       r
@@ -542,7 +542,7 @@ function VpnManager(e) {
         function () {
           e.active && r.activeOperation === e && e.finish(t);
         },
-        { mode: e.mode },
+        { mode: e.mode }
       ));
   }),
   (VpnManager.prototype.cancelOperation = function (e, t) {
@@ -560,7 +560,7 @@ function VpnManager(e) {
             r.activeOperation === e &&
             e.finish(t || err("CANCELLED", "connect cancelled"));
         },
-        { mode: e.mode },
+        { mode: e.mode }
       ));
   }),
   (VpnManager.prototype.scheduleRecoveryRetry = function () {
@@ -655,7 +655,7 @@ function VpnManager(e) {
             } catch (e) {
               o = err(
                 "SYSTEM_PROXY_RESTORE_FAILED",
-                "proxy restoration failed",
+                "proxy restoration failed"
               );
             }
           r.supervisor.stopAll(a);
@@ -669,7 +669,7 @@ function VpnManager(e) {
             r.logger &&
               r.logger.warn(
                 "vpn cleanup deadline reached; lock retained until core exit",
-                { code: o.code },
+                { code: o.code }
               ));
           var e,
             t = r.cleanupInProgress || [];
@@ -705,7 +705,7 @@ function VpnManager(e) {
             if (t) return e(t);
             o.connect(e);
           },
-          { mode: this.activeMode || "tun" },
+          { mode: this.activeMode || "tun" }
         )
       : (((n = this.beginOperation(e)).mode = this.selectedMode()),
         (function (e) {
@@ -719,7 +719,7 @@ function VpnManager(e) {
               return (
                 (s = err(
                   "SYSTEM_PROXY_RESTORE_PENDING",
-                  "proxy restoration is pending",
+                  "proxy restoration is pending"
                 )),
                 (o.lastError = { code: s.code, detail: s.detail || "" }),
                 n.finish(s)
@@ -732,7 +732,7 @@ function VpnManager(e) {
                 (s = err(
                   "MODE_UNSUPPORTED",
                   (e && e.systemProxy && e.systemProxy.reason) ||
-                    "system proxy unavailable",
+                    "system proxy unavailable"
                 )),
                 (o.lastError = { code: s.code, detail: s.detail || "" }),
                 n.finish(s)
@@ -748,7 +748,7 @@ function VpnManager(e) {
             o.requestedProfileId = "";
             if (!t)
               return n.finish(
-                err("NO_ACTIVE_PROFILE", "select a server first"),
+                err("NO_ACTIVE_PROFILE", "select a server first")
               );
             try {
               r = o.resolveCores(n.mode);
@@ -821,7 +821,7 @@ function VpnManager(e) {
                     return o.isCurrentOperation(n);
                   },
                   timeoutMs: Math.max(1, n.remaining()),
-                },
+                }
               )),
                 n.active &&
                   i &&
@@ -842,7 +842,7 @@ function VpnManager(e) {
                 detail: "invalid endpoint profile",
               }),
                 n.finish(
-                  err("ENDPOINT_RESOLUTION_FAILED", "invalid endpoint profile"),
+                  err("ENDPOINT_RESOLUTION_FAILED", "invalid endpoint profile")
                 ));
             }
           }
@@ -914,7 +914,7 @@ function VpnManager(e) {
         return a(
           errors.isAlcyoneError(e)
             ? e
-            : err("CONFIG_BUILD_FAILED", "invalid profile"),
+            : err("CONFIG_BUILD_FAILED", "invalid profile")
         );
       }
       if (s.isCurrentOperation(i)) {
@@ -956,8 +956,8 @@ function VpnManager(e) {
           return c(
             err(
               "CORE_START_FAILED",
-              "core stopped during traffic verification",
-            ),
+              "core stopped during traffic verification"
+            )
           );
         ((s.dataPlaneVerified = !0),
           (s.state = STATE.CONNECTED),
@@ -993,7 +993,7 @@ function VpnManager(e) {
             : c(err("CORE_START_FAILED", "core stopped before proxy setup"));
         if (!(s.coresAlive(i) && s.routes.tunExists()))
           return c(
-            err("CORE_START_FAILED", "core stopped before route install"),
+            err("CORE_START_FAILED", "core stopped before route install")
           );
         if (s.isCurrentOperation(i)) {
           try {
@@ -1009,7 +1009,7 @@ function VpnManager(e) {
               c(
                 errors.isAlcyoneError(e)
                   ? e
-                  : err("ROUTE_FAILED", "route install failed"),
+                  : err("ROUTE_FAILED", "route install failed")
               )
             );
           }
@@ -1024,8 +1024,8 @@ function VpnManager(e) {
                           return c(
                             err(
                               "CORE_START_FAILED",
-                              "core stopped during traffic verification",
-                            ),
+                              "core stopped during traffic verification"
+                            )
                           );
                         if (
                           !s.routes.routeActive() ||
@@ -1034,8 +1034,8 @@ function VpnManager(e) {
                           return c(
                             err(
                               "HEALTH_CHECK_FAILED",
-                              "routes changed during traffic verification",
-                            ),
+                              "routes changed during traffic verification"
+                            )
                           );
                         ((s.verifiedExternalIp = r), u());
                       }
@@ -1043,8 +1043,8 @@ function VpnManager(e) {
                   : c(
                       err(
                         "CORE_START_FAILED",
-                        "core stopped during route install",
-                      ),
+                        "core stopped during route install"
+                      )
                     )
                 : c(err("HEALTH_CHECK_FAILED", "bypass routes not protected"))
               : c(err("HEALTH_CHECK_FAILED", "tunnel route not active"));
@@ -1084,7 +1084,7 @@ function VpnManager(e) {
           isCurrent: function () {
             return r.isCurrentOperation(e);
           },
-        },
+        }
       );
     } catch (e) {
       i(err("HEALTH_CHECK_FAILED", "external traffic verification failed"));
@@ -1131,7 +1131,7 @@ function VpnManager(e) {
           },
           function (e) {
             o() && n(e);
-          },
+          }
         )),
         i.registerWaiter(t, s));
     }
@@ -1161,7 +1161,7 @@ function VpnManager(e) {
           return "systemProxy" === t.mode ? a() : s() && i.socksReady();
         },
         "sing-box",
-        n,
+        n
       );
     }
     !(function r(l) {
@@ -1193,21 +1193,21 @@ function VpnManager(e) {
                     if (o()) {
                       if (l >= XRAY_START_ATTEMPTS)
                         return n(
-                          err("CORE_START_FAILED", "proxy port did not open"),
+                          err("CORE_START_FAILED", "proxy port did not open")
                         );
                       if (
                         (i.logger &&
                           i.logger.warn(
                             "retrying xray after pre-readiness exit",
-                            { attempt: l + 1 },
+                            { attempt: l + 1 }
                           ),
                         t.remaining() <= 0)
                       )
                         return n(
                           err(
                             "CONNECTION_TIMEOUT",
-                            "connection attempt timed out",
-                          ),
+                            "connection attempt timed out"
+                          )
                         );
                       ((p = i.setTimeout(
                         function () {
@@ -1215,8 +1215,8 @@ function VpnManager(e) {
                         },
                         Math.min(
                           XRAY_RETRY_DELAY_MS,
-                          Math.max(1, t.remaining()),
-                        ),
+                          Math.max(1, t.remaining())
+                        )
                       )),
                         i.registerWaiter(t, {
                           cancel: function () {
@@ -1262,7 +1262,7 @@ function VpnManager(e) {
                     }
                     c(s, "tun2socks", n);
                   })();
-        },
+        }
       );
     })(1);
   }),
@@ -1283,7 +1283,7 @@ function VpnManager(e) {
         launcherExecutable = this.coreIntegrity.prepare(
           this.launcher.executable,
           this.paths.dataDir + "/bin/alcyone-exec",
-          "alcyone-exec",
+          "alcyone-exec"
         );
         this.coreIntegrity.verifyForLaunch(launcherExecutable, "alcyone-exec");
       } catch (launcherError) {
@@ -1362,7 +1362,7 @@ function VpnManager(e) {
             failureStage: "core-readiness",
             coreOutputText: coreDiagnostics.readSince(
               n.paths.tunnelLog,
-              o.logOffset,
+              o.logOffset
             ),
           });
         } catch (e) {}
@@ -1409,14 +1409,14 @@ function VpnManager(e) {
       this.logger &&
         this.logger.warn(
           "physical network changed, restoring current network",
-          { mode: this.activeMode || "" },
+          { mode: this.activeMode || "" }
         ),
       this.cleanup(
         function () {
           e.logger &&
             e.logger.info("vpn disconnected after physical network change");
         },
-        { preserveCurrentNetwork: !0, mode: this.activeMode || "tun" },
+        { preserveCurrentNetwork: !0, mode: this.activeMode || "tun" }
       ),
       !0)
     );

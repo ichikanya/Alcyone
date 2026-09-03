@@ -91,7 +91,7 @@ function ImporterServer(e) {
     var o = JSON.stringify(t);
     (e.writeHead(
       r,
-      securityHeaders({ "Content-Type": "application/json; charset=utf-8" }),
+      securityHeaders({ "Content-Type": "application/json; charset=utf-8" })
     ),
       e.end(o));
   }),
@@ -138,7 +138,7 @@ function ImporterServer(e) {
       return this.sendHtml(
         r,
         403,
-        templates.pairingPage(n, { error: templates.t(n, "session.expired") }),
+        templates.pairingPage(n, { error: templates.t(n, "session.expired") })
       );
     if (((t = this.sessionFor(e)), "/pair" === i && "POST" === s))
       return this.handlePair(e, r, n);
@@ -157,7 +157,7 @@ function ImporterServer(e) {
           profiles: this.store.sanitizedProfiles(),
           subscriptions: this.store.sanitizedSubscriptions(),
           csrf: t.csrf,
-        }),
+        })
       );
     if ("/api/profiles" === i && "GET" === s)
       return this.sendJson(r, 200, {
@@ -239,7 +239,7 @@ function ImporterServer(e) {
           o.setSubscriptionHwid(
             validate.profileId(r, "id", !0),
             validate.optionalProviderHwid(r, "providerHwid"),
-            t,
+            t
           )
         );
       if ("/api/subscriptions/delete" === e)
@@ -289,7 +289,7 @@ function ImporterServer(e) {
         return o.sendHtml(
           r,
           "RATE_LIMITED" === e.code ? 429 : 401,
-          templates.pairingPage(t, { error: d }),
+          templates.pairingPage(t, { error: d })
         );
       }
       (r.writeHead(
@@ -301,7 +301,7 @@ function ImporterServer(e) {
             "=" +
             s.id +
             "; Path=/; HttpOnly; SameSite=Strict; Max-Age=1800",
-        }),
+        })
       ),
         r.end());
     });

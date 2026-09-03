@@ -29,7 +29,7 @@ function lstatDirectory(r) {
   if (!isDirectoryStat(e))
     throw directoryError(
       "UNSAFE_DIRECTORY_TARGET",
-      "directory is not a real directory",
+      "directory is not a real directory"
     );
   return e;
 }
@@ -38,7 +38,7 @@ function requireParentDirectory(r) {
   if (!e || e === r)
     throw directoryError(
       "UNSAFE_DIRECTORY_TARGET",
-      "directory has no creatable parent",
+      "directory has no creatable parent"
     );
   return (lstatDirectory(e), e);
 }
@@ -65,7 +65,7 @@ function ensureExactDirectory(r, e, t) {
   if (!r || r === path.sep)
     throw directoryError(
       "UNSAFE_DIRECTORY_TARGET",
-      "root is not an owned directory",
+      "root is not an owned directory"
     );
   try {
     (lstatDirectory(r), (n = !0));
@@ -94,7 +94,7 @@ function ensureOwnedDir(r) {
   )
     throw directoryError(
       "UNSAFE_DIRECTORY_TARGET",
-      "shared system directory cannot be owned",
+      "shared system directory cannot be owned"
     );
   return ensureExactDirectory((r = e), DIR_MODE, !0);
 }
