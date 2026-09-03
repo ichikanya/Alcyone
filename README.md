@@ -58,8 +58,8 @@ python build_ipk.py --edition all
 Artifacts are written to:
 
 ```text
-release-assets/Alcyone-XRay_4.2.0.ipk
-release-assets/Alcyone-sing-box_4.2.0.ipk
+release-assets/Alcyone-XRay_4.2.2.ipk
+release-assets/Alcyone-sing-box_4.2.2.ipk
 ```
 
 The builder stages edition-specific metadata, service identifiers and pinned

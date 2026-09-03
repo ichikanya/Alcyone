@@ -61,6 +61,51 @@ function choosePriority(used, minimum, maximum) {
   return 0;
 }
 
+function validIpv4(value, allowPrefix) {
+  var parts = String(value || "").split("/");
+  var octets;
+  var i;
+  if (parts.length > (allowPrefix ? 2 : 1)) return false;
+  if (parts.length === 2 && (!allowPrefix || !/^\d+$/.test(parts[1]) || parseInt(parts[1], 10) > 32))
+    return false;
+  octets = parts[0].split(".");
+  if (octets.length !== 4) return false;
+  for (i = 0; i < octets.length; i++) {
+    if (!/^\d+$/.test(octets[i]) || parseInt(octets[i], 10) > 255) return false;
+  }
+  return true;
+}
+
+/* A policy table is consulted before main, so it must contain the real
+   on-link routes of the physical NIC. A broad 192.168/16 route via the
+   gateway is not equivalent: replies to a LAN controller can be hairpinned
+   through the router and disappear even while the TV itself remains alive. */
+function parseLinkRoutes(text, device) {
+  var result = [];
+  var seen = {};
+  String(text || "")
+    .split("\n")
+    .forEach(function (line) {
+      var tokens = words(line);
+      var prefix = tokens[0];
+      var devAt = tokens.indexOf("dev");
+      var srcAt = tokens.indexOf("src");
+      var source = srcAt >= 0 ? tokens[srcAt + 1] : "";
+      if (
+        !validIpv4(prefix, true) ||
+        devAt < 0 ||
+        tokens[devAt + 1] !== device ||
+        tokens.indexOf("via") >= 0 ||
+        (source && !validIpv4(source, false)) ||
+        seen[prefix]
+      )
+        return;
+      seen[prefix] = true;
+      result.push({ prefix: prefix, device: device, source: source });
+    });
+  return result;
+}
+
 function PolicyRoutes(options) {
   options = options || {};
   this.ip = options.ip;
@@ -98,12 +143,25 @@ PolicyRoutes.prototype.prepare = function (state) {
     table: table,
     tunnelPriority: choosePriority(used, TUNNEL_PREF_MIN, TUNNEL_PREF_MAX),
     endpointPaths: [],
+    linkRoutes: [],
     tunnelRuleApplied: false,
     ipv6RuleApplied: false,
     tablePrepared: false,
   };
   if (!state.policy.tunnelPriority)
     throw err("ROUTE_FAILED", "no free tunnel rule priority");
+  state.policy.linkRoutes = parseLinkRoutes(
+    this.run(
+      ["route", "show", "table", "main", "scope", "link"],
+      false,
+    ).stdout,
+    state.original.device,
+  );
+  /* Unsupported/empty discovery falls back to legacy before takeover. It is
+     safer to decline policy routing than to make LAN recovery depend on a
+     router accepting same-interface hairpin traffic. */
+  if (!state.policy.linkRoutes.length)
+    throw err("ROUTE_FAILED", "physical link routes unavailable");
   for (i = 0; i < state.serverAddresses.length; i++) {
     path = parseRouteGet(
       this.run(["route", "get", state.serverAddresses[i]], true).stdout,
@@ -130,6 +188,32 @@ PolicyRoutes.prototype.endpointRouteArgs = function (path, table) {
   return args.concat(["table", String(table)]);
 };
 
+PolicyRoutes.prototype.linkRouteArgs = function (path, table) {
+  var args = ["route", "replace", path.prefix, "dev", path.device, "scope", "link"];
+  if (path.source) args = args.concat(["src", path.source]);
+  return args.concat(["table", String(table)]);
+};
+
+PolicyRoutes.prototype.linkRoutesPhysical = function (state) {
+  var policy = state && state.policy;
+  var i;
+  var result;
+  if (!policy || !policy.linkRoutes || !policy.linkRoutes.length) return false;
+  for (i = 0; i < policy.linkRoutes.length; i++) {
+    result = this.run(
+      ["route", "show", "table", String(policy.table), "exact", policy.linkRoutes[i].prefix],
+      false,
+    );
+    if (
+      result.code !== 0 ||
+      result.stdout.indexOf("dev " + policy.linkRoutes[i].device) < 0 ||
+      result.stdout.indexOf(" via ") >= 0
+    )
+      return false;
+  }
+  return true;
+};
+
 PolicyRoutes.prototype.apply = function (state) {
   var policy = state.policy;
   var i;
@@ -143,12 +227,16 @@ PolicyRoutes.prototype.apply = function (state) {
     path.ruleApplied = true;
     this.persist(state);
   }
+  for (i = 0; i < policy.linkRoutes.length; i++)
+    this.run(this.linkRouteArgs(policy.linkRoutes[i], policy.table), true);
   for (i = 0; i < DIRECT_PREFIXES.length; i++) {
     route = ["route", "replace", DIRECT_PREFIXES[i]];
     if (state.original.gateway && DIRECT_PREFIXES[i] !== "169.254.0.0/16" && DIRECT_PREFIXES[i] !== "224.0.0.0/4" && DIRECT_PREFIXES[i] !== "240.0.0.0/4")
       route = route.concat(["via", state.original.gateway]);
     this.run(route.concat(["dev", state.original.device, "table", String(policy.table)]), true);
   }
+  if (!this.linkRoutesPhysical(state))
+    throw err("ROUTE_FAILED", "physical link routes missing from policy table");
   if (this.core === "sing-box") {
     this.run(["addr", "add", this.tunIp + "/30", "dev", this.tunName], false);
   } else {
@@ -229,5 +317,6 @@ module.exports = {
   parseRouteGet: parseRouteGet,
   usedPriorities: usedPriorities,
   choosePriority: choosePriority,
+  parseLinkRoutes: parseLinkRoutes,
   PolicyRoutes: PolicyRoutes,
 };

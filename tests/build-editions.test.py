@@ -225,6 +225,24 @@ def main():
         },
     }
     with tempfile.TemporaryDirectory(prefix="alcyone-build-test-") as output_dir:
+        # A local output directory commonly survives a version bump. Its old
+        # manifest must not contaminate the next release candidate.
+        with open(os.path.join(output_dir, "artifacts.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "version": "0.0.0-stale",
+                    "label": "",
+                    "editions": [
+                        {
+                            "edition": "XRay",
+                            "file": "Alcyone-XRay_0.0.0-stale.ipk",
+                            "sha256": "0" * 64,
+                            "size": 1,
+                        }
+                    ],
+                },
+                handle,
+            )
         build(output_dir, "xray")
         assert sorted(os.listdir(output_dir)) == sorted(
             [expected["xray"]["artifact"], "artifacts.json"]
@@ -243,6 +261,9 @@ def main():
         )
         assert artifacts["version"] == VERSION
         by_file = {item["file"]: item for item in artifacts["editions"]}
+        assert sorted(by_file) == sorted(
+            expected[key]["artifact"] for key in ("xray", "sing-box")
+        ), "artifacts.json retained entries from another version or label"
         for key in ("xray", "sing-box"):
             artifact_name = expected[key]["artifact"]
             assert artifact_name in by_file, "artifacts.json lacks %s" % artifact_name

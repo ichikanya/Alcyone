@@ -80,9 +80,16 @@ var xrProfile = {
   link:
     "vless://11111111-2222-3333-4444-555555555555@b.example.com:443?security=reality&pbk=K#B",
 };
-var xrLegacy = xrayConfig.build(xrProfile, "pin", {});
+var xrLegacy = xrayConfig.build(xrProfile, "pin", {
+  physicalInterface: "wlan-test0",
+});
 assert.strictEqual(xrLegacy.inbounds.length, 1, "legacy mode has exactly the health inbound");
 assert.strictEqual(xrLegacy.inbounds[0].port, xrayConfig.SOCKS_PORT);
+assert.strictEqual(
+  xrLegacy.outbounds[1].streamSettings.sockopt.interface,
+  "wlan-test0",
+  "generated freedom outbound is pinned to the physical interface",
+);
 
 /* --- xray native-tun simple profile --- */
 var xrNative = xrayConfig.build(xrProfile, "pin", {

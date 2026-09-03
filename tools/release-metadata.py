@@ -2,7 +2,7 @@
 """Release metadata: single source of truth checks and feed synchronization.
 
     python tools/release-metadata.py check
-    python tools/release-metadata.py sync --version 4.2.1 [--ipk-dir DIR]
+    python tools/release-metadata.py sync --version 4.2.2 [--ipk-dir DIR]
 
 `check` verifies two independent groups and one relation between them:
 
@@ -85,7 +85,7 @@ def source_version(errors):
     return distinct[0]
 
 
-def feed_facts(ipk_dir):
+def feed_facts(ipk_dir, artifact_version=None):
     facts = {}
     rjson = read_json(ROOT / "r.json")
     repojson = read_json(ROOT / "repository.json")
@@ -106,7 +106,10 @@ def feed_facts(ipk_dir):
         manifest = read_json(ROOT / manifest_name)
         entry = {}
         entry["manifest"] = manifest
-        declared_version = str(manifest.get("version"))
+        # During `sync`, manifests still describe the previous release. The
+        # requested version must select the new artifacts; otherwise a version
+        # bump silently signs the new feed with hashes from the old IPKs.
+        declared_version = str(artifact_version or manifest.get("version"))
         expected_name = edition["file"].format(v=declared_version)
         entry["r"] = next(
             (p for p in rjson.get("packages", []) if p.get("id") == edition["id"]),
@@ -201,7 +204,7 @@ def main():
 
     if args.command == "sync":
         version = args.version
-        facts = feed_facts(pathlib.Path(args.ipk_dir))
+        facts = feed_facts(pathlib.Path(args.ipk_dir), version)
         errors = []
         for key, entry in facts.items():
             if not entry["ipk_exists"]:

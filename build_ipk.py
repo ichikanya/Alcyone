@@ -25,7 +25,7 @@ APP = os.path.join(ROOT, "app")
 SERVICE = os.path.join(APP, "service")
 CORES = os.environ.get("ALCYONE_CORES_DIR", os.path.join(ROOT, "build", "cores"))
 VERSION_FILE = os.path.join(ROOT, "VERSION")
-VERSION = open(VERSION_FILE, "r", encoding="utf-8").read().strip() if os.path.exists(VERSION_FILE) else "4.2.1"
+VERSION = open(VERSION_FILE, "r", encoding="utf-8").read().strip() if os.path.exists(VERSION_FILE) else "4.2.2"
 SOURCE_DATE_EPOCH = 1700000000
 
 ELF_MACHINES = {
@@ -484,19 +484,21 @@ def write_artifacts_manifest(output_dir, names, label):
     import datetime
 
     target = pathlib.Path(output_dir) / "artifacts.json"
-    existing = {}
-    if target.is_file():
-        try:
-            prior = json.loads(target.read_text(encoding="utf-8"))
-            for item in prior.get("editions", []):
-                existing[item["file"]] = item
-        except (ValueError, OSError, KeyError):
-            existing = {}
     suffix = ("_" + label) if label else ""
     pattern = re.compile(
         r"^Alcyone-(?P<edition>.+?)_%s%s\.ipk$"
         % (re.escape(VERSION), re.escape(suffix))
     )
+    existing = {}
+    if target.is_file():
+        try:
+            prior = json.loads(target.read_text(encoding="utf-8"))
+            if prior.get("version") == VERSION and prior.get("label", "") == label:
+                for item in prior.get("editions", []):
+                    if pattern.match(item["file"]):
+                        existing[item["file"]] = item
+        except (ValueError, OSError, KeyError):
+            existing = {}
     for path in sorted(pathlib.Path(output_dir).glob("Alcyone-*")):
         match = pattern.match(path.name)
         if not match:

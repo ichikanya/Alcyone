@@ -256,6 +256,25 @@ function applyResourcePolicy(t) {
         applyXhttpLimits(o));
   return t;
 }
+/* A freedom outbound inside a full-route TUN must never follow the kernel's
+   split default back into the TUN.  That creates a recursion loop:
+   Xray freedom -> TUN -> tun2socks -> Xray SOCKS -> freedom.  Pinning only
+   freedom sockets to the discovered physical NIC preserves imported direct
+   rules without weakening the proxy endpoint route checks. */
+function applyDirectInterface(t, e) {
+  var r, s, o, n;
+  if (!e || !isObject(t)) return t;
+  for (r = isArray(t.outbounds) ? t.outbounds : [], s = 0; s < r.length; s++)
+    if (
+      isObject((o = r[s])) &&
+      "freedom" === String(o.protocol || "").toLowerCase()
+    ) {
+      (isObject(o.streamSettings) || (o.streamSettings = {}),
+        isObject((n = o.streamSettings).sockopt) || (n.sockopt = {}),
+        (n.sockopt.interface = String(e)));
+    }
+  return t;
+}
 function uniqueTag(t, e) {
   var r,
     s,
@@ -388,7 +407,10 @@ function buildFullConfig(t, e, r) {
     delete o.remarks,
     delete o.meta,
     (r = r || {}),
-    applyBootstrap(applyDns(applyResourcePolicy(o), r.dnsServer), e)
+    applyDirectInterface(
+      applyBootstrap(applyDns(applyResourcePolicy(o), r.dnsServer), e),
+      r.physicalInterface,
+    )
   );
 }
 function replaceWithHttpInbound(t) {
@@ -419,42 +441,45 @@ function buildTun(t, e, r) {
         )
       : withNativeTun(
           r,
-          applyBootstrap(
-            applyDns(
-              applyResourcePolicy({
-                log: { loglevel: "warning" },
-                inbounds: [
-                  {
-                    tag: "socks-in",
-                    listen: "127.0.0.1",
-                    port: SOCKS_PORT,
-                    protocol: "socks",
-                    settings: { auth: "noauth", udp: !0 },
-                    sniffing: {
-                      enabled: !0,
-                      destOverride: ["http", "tls", "quic"],
-                    },
-                  },
-                ],
-                outbounds: [
-                  outboundFor(t),
-                  { protocol: "freedom", tag: "direct" },
-                  { protocol: "blackhole", tag: "block" },
-                ],
-                routing: {
-                  domainStrategy: "AsIs",
-                  rules: [
+          applyDirectInterface(
+            applyBootstrap(
+              applyDns(
+                applyResourcePolicy({
+                  log: { loglevel: "warning" },
+                  inbounds: [
                     {
-                      type: "field",
-                      ip: PRIVATE_RANGES.slice(0),
-                      outboundTag: "direct",
+                      tag: "socks-in",
+                      listen: "127.0.0.1",
+                      port: SOCKS_PORT,
+                      protocol: "socks",
+                      settings: { auth: "noauth", udp: !0 },
+                      sniffing: {
+                        enabled: !0,
+                        destOverride: ["http", "tls", "quic"],
+                      },
                     },
                   ],
-                },
-              }),
-              r.dnsServer,
+                  outbounds: [
+                    outboundFor(t),
+                    { protocol: "freedom", tag: "direct" },
+                    { protocol: "blackhole", tag: "block" },
+                  ],
+                  routing: {
+                    domainStrategy: "AsIs",
+                    rules: [
+                      {
+                        type: "field",
+                        ip: PRIVATE_RANGES.slice(0),
+                        outboundTag: "direct",
+                      },
+                    ],
+                  },
+                }),
+                r.dnsServer,
+              ),
+              e,
             ),
-            e,
+            r.physicalInterface,
           ),
         )
   );
@@ -571,6 +596,7 @@ module.exports = {
   outboundFor: outboundFor,
   buildStreamSettings: buildStreamSettings,
   applyResourcePolicy: applyResourcePolicy,
+  applyDirectInterface: applyDirectInterface,
   applyDns: applyDns,
   applyBootstrap: applyBootstrap,
   endpoints: endpoints,

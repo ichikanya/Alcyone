@@ -259,11 +259,23 @@ function decodeProcIpv4(e) {
     return 0 === this.ip(["link", "show", this.tunName]).code;
   }),
   (RouteManager.prototype.addServerBypass = function (e, t) {
-    e &&
-      t &&
-      (t.gateway
-        ? this.ip(["route", "replace", e, "via", t.gateway, "dev", t.device])
-        : this.ip(["route", "replace", e, "dev", t.device]));
+    var r, i;
+    if (!e) return !0;
+    if (!t || !t.device)
+      throw err("ROUTE_FAILED", "physical endpoint route unavailable");
+    ((r = ["route", "replace", e]),
+      t.gateway && (r = r.concat(["via", t.gateway])),
+      (r = r.concat(["dev", t.device])),
+      (i = this.ip(r)));
+    if (!i || 0 !== i.code)
+      throw (
+        this.logger &&
+          this.logger.warn("endpoint route install failed", {
+            status: i && "number" == typeof i.code ? i.code : -1,
+          }),
+        err("ROUTE_FAILED", "endpoint route install failed")
+      );
+    return !0;
   }),
   (RouteManager.prototype.removeServerBypass = function (e, t, r) {
     e &&
@@ -336,6 +348,36 @@ function decodeProcIpv4(e) {
         );
     return !0;
   }),
+  (RouteManager.prototype.serverBypassesActive = function (e) {
+    var t,
+      r,
+      i,
+      o = (e && e.serverAddresses) || [],
+      a = e && e.original;
+    if (!o.length) return !0;
+    if (!a || !a.device) return !1;
+    for (t = 0; t < o.length; t++) {
+      ((r = this.ip(["route", "get", o[t]])),
+        (i = /\bdev\s+(\S+)/.exec(r.stdout)));
+      if (
+        0 !== r.code ||
+        !i ||
+        i[1] !== a.device ||
+        r.stdout.indexOf(this.tunName) >= 0 ||
+        r.stdout.indexOf(TUN_GW) >= 0
+      )
+        return (
+          this.logger &&
+            this.logger.warn("endpoint route verification failed", {
+              index: t,
+              status: r.code,
+              backend: (e && e.routingBackend) || "legacy",
+            }),
+          !1
+        );
+    }
+    return !0;
+  }),
   (RouteManager.prototype.applyTunRoutes = function (e) {
     var t,
       r = e && e.original,
@@ -346,6 +388,8 @@ function decodeProcIpv4(e) {
     if (e && e.routingBackend === "policy" && e.policy) {
       try {
         this.policy.apply(e);
+        if (!this.serverBypassesActive(e))
+          throw err("ROUTE_FAILED", "endpoint routes captured by tunnel");
         this.applied = !0;
         this.logger && this.logger.info("tun routes applied", { core: this.core, backend: "policy" });
         return !0;
@@ -405,7 +449,7 @@ function decodeProcIpv4(e) {
             this.tunName,
           ]);
     this.ip(["route", "flush", "cache"]);
-    if (!this.directRoutesActive(e)) {
+    if (!this.directRoutesActive(e) || !this.serverBypassesActive(e)) {
       /* Transient netlink/cache propagation on webOS 5: wait briefly,
          flush once more, then recheck before aborting the whole connect. */
       var verifyAfter = Date.now() + 250;
@@ -413,6 +457,8 @@ function decodeProcIpv4(e) {
       this.ip(["route", "flush", "cache"]);
       if (!this.directRoutesActive(e))
         throw err("ROUTE_FAILED", "direct routes captured by tunnel");
+      if (!this.serverBypassesActive(e))
+        throw err("ROUTE_FAILED", "endpoint routes captured by tunnel");
       this.logger &&
         this.logger.warn("direct route verification passed on recheck");
     }
@@ -554,6 +600,7 @@ function decodeProcIpv4(e) {
       tunPresent: this.tunExists(),
       routeActive: this.routeActive(),
       directBypassActive: this.directRoutesActive(e),
+      endpointBypassActive: this.serverBypassesActive(e),
       originalDevice: (e && e.original && e.original.device) || "",
       bypassCount: (e && e.serverAddresses && e.serverAddresses.length) || 0,
       ipv6Blocked:

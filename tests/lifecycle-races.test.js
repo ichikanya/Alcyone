@@ -78,15 +78,31 @@ async function supervisorIdentityTests() {
       stopDone = true;
     });
     await later(15);
+    children[1].emit("error", { code: "EPERM" });
+    var restartBlocked = false;
+    try {
+      supervisor.start("xray", process.execPath, []);
+    } catch (error) {
+      restartBlocked = error && error.code === "ALREADY_RUNNING";
+    }
+    check(
+      "SIGKILL or process-control errors do not pretend a stubborn core has exited",
+      !stopDone &&
+        restartBlocked &&
+        supervisor.entryFor("xray") === b &&
+        children[1].kills.join(",") === "SIGTERM,SIGKILL",
+    );
+    children[1].emit("exit", 9, "SIGKILL");
+    check(
+      "confirmed kernel exit completes stop and releases the generation",
+      stopDone && supervisor.entryFor("xray") === null,
+    );
     var c = supervisor.start("xray", process.execPath, []);
     children[1].emit("error", { code: "EIO" });
     children[1].emit("exit", 12, null);
     check(
-      "force-stop timeout followed by restart keeps generations separate",
-      stopDone &&
-        supervisor.entryFor("xray") === c &&
-        !c.exited &&
-        exits.length === 1,
+      "late stopped-core events cannot affect the replacement generation",
+      supervisor.entryFor("xray") === c && !c.exited && exits.length === 2,
     );
     check(
       "supervisor has no stale entry after the replacement exits",
@@ -95,7 +111,42 @@ async function supervisorIdentityTests() {
     children[2].emit("exit", 0, null);
     check(
       "replacement exit is still delivered exactly once",
-      exits.length === 2 && supervisor.entryFor("xray").exited,
+      exits.length === 3 && supervisor.entryFor("xray").exited,
+    );
+    var guardedSupervisor = new supervisorLib.Supervisor({
+      ownedExecutableDir: path.dirname(process.execPath),
+      findExecutablePids: function () {
+        return [8123];
+      },
+    });
+    var orphanBlocked = false;
+    try {
+      guardedSupervisor.start("xray", process.execPath, []);
+    } catch (error) {
+      orphanBlocked =
+        error &&
+        error.code === "ALREADY_RUNNING" &&
+        String(error.detail || error.message).indexOf("8123") >= 0;
+    }
+    check(
+      "startup refuses a second core while an exact executable orphan exists",
+      orphanBlocked && guardedSupervisor.count() === 0,
+    );
+    var procDir = fs.mkdtempSync(path.join(os.tmpdir(), "alcyone-proc-"));
+    fs.mkdirSync(path.join(procDir, "101"));
+    fs.mkdirSync(path.join(procDir, "102"));
+    var deletedPids = supervisorLib.findExecutablePids("/data/bin/xray", {
+      procRoot: procDir,
+      currentPid: 101,
+      procReadlink: function (target) {
+        return /[\\/]102[\\/]exe$/.test(target)
+          ? "/data/bin/xray (deleted)"
+          : "/data/bin/xray";
+      },
+    });
+    check(
+      "orphan guard recognizes a running executable whose file was upgraded",
+      deletedPids.join(",") === "102",
     );
     var ignoredSupervisor = new supervisorLib.Supervisor({ maxProcesses: 1 });
     var ignoredChild = ignoredSupervisor.start(
@@ -146,6 +197,7 @@ function makeManager(options) {
       callback(null, "203.0.113.88");
     },
     connectTimeoutMs: options.connectTimeoutMs,
+    cleanupTimeoutMs: options.cleanupTimeoutMs,
     paths: {
       appDir: dir,
       dataDir: dir,
@@ -210,6 +262,9 @@ function makeManager(options) {
     return true;
   };
   manager.routes.directRoutesActive = function () {
+    return true;
+  };
+  manager.routes.serverBypassesActive = function () {
     return true;
   };
   manager.routes.tunExists = function () {
@@ -436,6 +491,47 @@ async function managerRaceTests() {
     probeTimeoutCalls === 1 &&
       ctx.manager.state === "idle" &&
       ctx.metrics.rollback === 1 &&
+      !ctx.manager.lock.status().held,
+  );
+
+  ctx = makeManager({ cleanupTimeoutMs: 15 });
+  var completeHungStop = null;
+  ctx.manager.state = "connected";
+  ctx.manager.activeMode = "tun";
+  ctx.manager.lock.acquire("tun");
+  ctx.manager.routes.physicalRestored = function () {
+    return true;
+  };
+  ctx.manager.supervisor.children.xray = {
+    name: "xray",
+    pid: 9901,
+    exited: false,
+  };
+  ctx.manager.supervisor.stopAll = function (callback) {
+    completeHungStop = callback;
+  };
+  check(
+    "watchdog starts fail-safe cleanup for a stuck core",
+    ctx.manager.failSafe("FD_EXHAUSTION_RISK", "") === true,
+  );
+  await later(35);
+  check(
+    "cleanup timeout retains stopping state and lock while core is still live",
+    ctx.manager.state === "stopping" &&
+      !!ctx.manager.cleanupInProgress &&
+      ctx.manager.cleanupTimedOut &&
+      ctx.manager.lock.status().held &&
+      ctx.manager.breakerOpen &&
+      !ctx.manager.watchdogRecoveryTimer,
+  );
+  ctx.manager.supervisor.children = {};
+  completeHungStop();
+  await later(5);
+  check(
+    "late confirmed core exit safely finalizes cleanup exactly once",
+    ctx.manager.state === "idle" &&
+      !ctx.manager.cleanupInProgress &&
+      !ctx.manager.cleanupTimedOut &&
       !ctx.manager.lock.status().held,
   );
 

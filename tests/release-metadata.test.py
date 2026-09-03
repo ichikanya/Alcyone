@@ -8,6 +8,9 @@ disagreed with the shipping IPK hashes and sizes.
 import pathlib
 import subprocess
 import sys
+import hashlib
+import importlib.util
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -40,4 +43,22 @@ try:
 finally:
     repo_json_path.write_text(original, encoding="utf-8")
 
-print("ok - release metadata guard passes and rejects tampering")
+# A release bump must select artifacts by the requested version, not by the
+# still-old version in the manifests that `sync` is about to replace.
+spec = importlib.util.spec_from_file_location(
+    "release_metadata", ROOT / "tools" / "release-metadata.py"
+)
+release_metadata = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(release_metadata)
+with tempfile.TemporaryDirectory() as temp_dir:
+    artifact_dir = pathlib.Path(temp_dir)
+    payloads = {"xray": b"new-xray", "sing-box": b"new-sing-box"}
+    for edition in release_metadata.EDITIONS:
+        path = artifact_dir / edition["file"].format(v="9.9.9")
+        path.write_bytes(payloads[edition["key"]])
+    facts = release_metadata.feed_facts(artifact_dir, "9.9.9")
+    for key, payload in payloads.items():
+        assert facts[key]["ipk_exists"], f"sync did not select new {key} artifact"
+        assert facts[key]["ipk_hash"] == hashlib.sha256(payload).hexdigest()
+
+print("ok - release metadata guard passes, rejects tampering, and selects bumped artifacts")

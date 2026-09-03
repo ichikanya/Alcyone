@@ -16,6 +16,9 @@ function fileExists(t) {
     return !1;
   }
 }
+function procExecutablePath(t) {
+  return String(t || "").replace(/ \(deleted\)$/, "");
+}
 /* Best-effort raw byte copy used for pre-migration evidence. The backup is
    a safety net for manual recovery, never an automatic restore source, so
    a partial copy only costs information, never correctness. */
@@ -44,6 +47,7 @@ function Migrator(t) {
     (this.procRoot = t.procRoot || "/proc"),
     (this.procReadlink = t.procReadlink || fs.readlinkSync),
     (this.kill = t.kill || process.kill),
+    (this.setTimeout = t.setTimeout || setTimeout),
     (this.sharedPermissions = t.sharedPermissions || sharedPermissions));
 }
 function readPid(t) {
@@ -410,9 +414,27 @@ function readPid(t) {
         } catch (t) {
           continue;
         }
-        if (o[r])
+        if (o[procExecutablePath(r)])
           try {
-            (this.kill(i, "SIGTERM"), n.push(i));
+            (this.kill(i, "SIGTERM"),
+              n.push(i),
+              (function (t, e, i) {
+                var r = t.setTimeout(function () {
+                  var r;
+                  try {
+                    r = t.procReadlink(
+                      path.join(t.procRoot, String(e), "exe"),
+                    );
+                  } catch (t) {
+                    return;
+                  }
+                  if (procExecutablePath(r) !== i) return;
+                  try {
+                    t.kill(e, "SIGKILL");
+                  } catch (t) {}
+                }, 500);
+                r && r.unref && r.unref();
+              })(this, i, procExecutablePath(r)));
           } catch (t) {}
       }
     return (

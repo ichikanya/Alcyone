@@ -113,6 +113,7 @@ function VpnManager(e) {
     (this.activeOperation = null),
     (this.cleanupInProgress = null),
     (this.cleanupTimedOut = !1),
+    (this.cleanupTimeoutError = null),
     (this.recoveryInProgress = !1),
     (this.recoveryTimer = null),
     (this.watchdogRecoveryTimer = null),
@@ -171,6 +172,8 @@ function VpnManager(e) {
   this.supervisor = new supervisorLib.Supervisor({
     logger: this.logger,
     maxProcesses: 3,
+    ownedExecutableDir: this.paths.dataDir + "/bin",
+    findExecutablePids: e.findExecutablePids,
     onExit: function (e, r, i, n) {
       t.onCoreExit(e, r, i, n);
     },
@@ -279,15 +282,25 @@ function VpnManager(e) {
     if (this.state !== STATE.CONNECTED || this.cleanupInProgress) return false;
     var self = this;
     var now = Date.now();
-    var repeated = this.lastWatchdogIncidentAt && now - this.lastWatchdogIncidentAt < 30 * 60 * 1000;
     this.lastWatchdogIncidentAt = now;
-    this.breakerOpen = !!repeated;
     this.state = STATE.STOPPING;
     this.dataPlaneVerified = false;
     this.verifiedExternalIp = "";
     this.lastError = { code: code || "VPN_LIVENESS_FAILED", detail: detail || "" };
     this.logger && this.logger.warn("watchdog fail-safe started", { code: this.lastError.code });
-    this.cleanup(function () {
+    this.cleanup(function (cleanupError) {
+      if (cleanupError) {
+        self.breakerOpen = true;
+        self.lastError = {
+          code: cleanupError.code || "CORE_START_FAILED",
+          detail: cleanupError.detail || "cleanup timed out",
+        };
+        self.logger &&
+          self.logger.error("watchdog recovery blocked by a live core", {
+            code: self.lastError.code,
+          });
+        return;
+      }
       var restored = false;
       try { restored = self.routes.physicalRestored(); } catch (error) {}
       if (!restored) {
@@ -572,11 +585,15 @@ function VpnManager(e) {
       n = once(e || function () {}),
       o = null,
       s = null,
-      a = null,
-      c = !1;
-    if (this.cleanupInProgress) this.cleanupInProgress.push(n);
+      a = null;
+    if (this.cleanupInProgress) {
+      this.cleanupInProgress.push(n);
+      this.cleanupTimedOut && n(this.cleanupTimeoutError);
+    }
     else {
       ((this.cleanupInProgress = [n]),
+        (this.cleanupTimedOut = !1),
+        (this.cleanupTimeoutError = null),
         this.recoveryTimer &&
           (clearTimeout(this.recoveryTimer), (this.recoveryTimer = null)),
         this.stopLogGuard(),
@@ -613,7 +630,8 @@ function VpnManager(e) {
                   r.dataPlaneVerified = !1,
                   r.verifiedExternalIp = "",
                   r.cleanupInProgress = null,
-                  r.cleanupTimedOut = c,
+                  r.cleanupTimedOut = !1,
+                  r.cleanupTimeoutError = null,
                   r.recoveryInProgress = !1,
                   o &&
                     "SYSTEM_PROXY_RESTORE_PENDING" === o.code &&
@@ -644,11 +662,18 @@ function VpnManager(e) {
         })));
       try {
         ((s = r.setTimeout(function () {
-          ((c = !0),
-            (o = o || err("CORE_START_FAILED", "cleanup timed out")),
+          ((r.cleanupTimedOut = !0),
+            (r.cleanupTimeoutError =
+              o || err("CORE_START_FAILED", "cleanup timed out")),
+            (o = r.cleanupTimeoutError),
             r.logger &&
-              r.logger.warn("vpn cleanup deadline reached", { code: o.code }),
-            a && a());
+              r.logger.warn(
+                "vpn cleanup deadline reached; lock retained until core exit",
+                { code: o.code },
+              ));
+          var e,
+            t = r.cleanupInProgress || [];
+          for (e = 0; e < t.length; e++) t[e](o);
         }, r.cleanupTimeoutMs)) &&
           s.unref &&
           s.unref(),
@@ -860,7 +885,15 @@ function VpnManager(e) {
     if (s.isCurrentOperation(i)) {
       try {
         var dataPlaneMode = xrayConfig.dataPlaneFor(this.edition),
-          tunMtu = routesLib.mtuPolicy(this.routes.physicalMtu());
+          tunMtu = routesLib.mtuPolicy(this.routes.physicalMtu()),
+          physicalRoute =
+            "systemProxy" !== i.mode && this.routes.readDefaultRoute
+              ? this.routes.readDefaultRoute()
+              : null,
+          physicalInterface =
+            physicalRoute && physicalRoute.device
+              ? String(physicalRoute.device)
+              : "";
         n =
           "sing-box" === this.edition.core
             ? singboxConfig.build(e, r, {
@@ -874,6 +907,7 @@ function VpnManager(e) {
                 mode: i.mode,
                 dataPlane: dataPlaneMode,
                 interfaceName: this.routes.tunName,
+                physicalInterface: physicalInterface,
                 mtu: tunMtu,
               });
       } catch (e) {
@@ -981,7 +1015,7 @@ function VpnManager(e) {
           }
           if (s.isCurrentOperation(i))
             return s.routes.routeActive()
-              ? s.routes.directRoutesActive(t)
+              ? s.routesProtected(t)
                 ? s.coresAlive(i) && s.routes.tunExists()
                   ? void s.verifyDataPlane(i, function (e, r) {
                       if (s.isCurrentOperation(i)) {
@@ -995,7 +1029,7 @@ function VpnManager(e) {
                           );
                         if (
                           !s.routes.routeActive() ||
-                          !s.routes.directRoutesActive(t)
+                          !s.routesProtected(t)
                         )
                           return c(
                             err(
@@ -1012,7 +1046,7 @@ function VpnManager(e) {
                         "core stopped during route install",
                       ),
                     )
-                : c(err("HEALTH_CHECK_FAILED", "direct routes not protected"))
+                : c(err("HEALTH_CHECK_FAILED", "bypass routes not protected"))
               : c(err("HEALTH_CHECK_FAILED", "tunnel route not active"));
         }
       }
@@ -1414,12 +1448,21 @@ function VpnManager(e) {
     try {
       e = this.routes.loadState();
       t = this.routes.networkChanged(e);
-      if (!t && this.routes.routeActive() && !this.routes.directRoutesActive(e))
+      if (!t && this.routes.routeActive() && !this.routesProtected(e))
         t = true;
     } catch (e) {
       t = true;
     }
     return !!t && this.handleNetworkChange();
+  }),
+  (VpnManager.prototype.routesProtected = function (e) {
+    return !!(
+      this.routes &&
+      "function" == typeof this.routes.directRoutesActive &&
+      "function" == typeof this.routes.serverBypassesActive &&
+      this.routes.directRoutesActive(e) &&
+      this.routes.serverBypassesActive(e)
+    );
   }),
   (VpnManager.prototype.portReady = function (e) {
     var t,

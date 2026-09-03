@@ -120,6 +120,9 @@ function makeManager(options) {
   manager.routes.directRoutesActive = function () {
     return !options.directRouteInactive;
   };
+  manager.routes.serverBypassesActive = function () {
+    return !options.endpointRouteInactive;
+  };
   manager.routes.tunExists = function () {
     return !!manager._tunUp;
   };
@@ -263,6 +266,7 @@ step(function (next) {
         ctx.manager.routes.networkChanged = function () { return false; };
         ctx.manager.routes.routeActive = function () { return true; };
         ctx.manager.routes.directRoutesActive = function () { return true; };
+        ctx.manager.routes.serverBypassesActive = function () { return true; };
         record(
           "healthy VPN-owned routes are not mistaken for a physical network change",
           !error && ctx.manager.checkNetworkChange() === false,
@@ -288,6 +292,25 @@ step(function (next) {
         );
         setTimeout(function () {
           record("route fault cleanup remains serialized", ctx.manager.state === "idle");
+          next();
+        }, 30);
+      });
+    });
+  })
+  .then(function () {
+    return step(function (next) {
+      var ctx = makeManager();
+      ctx.manager.connect(function (error) {
+        ctx.manager.routes.networkChanged = function () { return false; };
+        ctx.manager.routes.routeActive = function () { return true; };
+        ctx.manager.routes.directRoutesActive = function () { return true; };
+        ctx.manager.routes.serverBypassesActive = function () { return false; };
+        record(
+          "lost proxy endpoint bypass is treated as a route fault",
+          !error && ctx.manager.checkNetworkChange() === true,
+        );
+        setTimeout(function () {
+          record("endpoint route fault cleanup remains serialized", ctx.manager.state === "idle");
           next();
         }, 30);
       });

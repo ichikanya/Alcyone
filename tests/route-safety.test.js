@@ -148,6 +148,58 @@ record(
       : hasCommand(["route", "show", "exact", route.prefix]);
   }),
 );
+record(
+  "proxy endpoint route is verified on the captured physical interface",
+  manager.serverBypassesActive(state) &&
+    hasCommand(["route", "get", "203.0.113.10"]),
+);
+
+(function () {
+  var failed = new routesLib.RouteManager({
+    core: "xray",
+    stateFile: path.join(dir, "failed-endpoint.state"),
+    ipBinary: "/sbin/ip",
+  });
+  var code = "";
+  failed.ip = function () {
+    return { code: 2, stdout: "", stderr: "unreachable" };
+  };
+  try {
+    failed.addServerBypass("203.0.113.10", {
+      device: "wlan0",
+      gateway: "192.168.1.1",
+    });
+  } catch (error) {
+    code = error.code;
+  }
+  record(
+    "failed endpoint bypass installation aborts instead of failing open",
+    code === "ROUTE_FAILED",
+  );
+})();
+
+(function () {
+  var looped = new routesLib.RouteManager({
+    core: "xray",
+    stateFile: path.join(dir, "looped-endpoint.state"),
+    ipBinary: "/sbin/ip",
+  });
+  looped.ip = function () {
+    return {
+      code: 0,
+      stdout: "203.0.113.10 via 198.18.0.2 dev alx0\n",
+      stderr: "",
+    };
+  };
+  record(
+    "endpoint captured by the TUN is rejected before it can recurse",
+    looped.serverBypassesActive({
+      routingBackend: "legacy",
+      original: { device: "wlan0", gateway: "192.168.1.1" },
+      serverAddresses: ["203.0.113.10"],
+    }) === false,
+  );
+})();
 
 commands = [];
 manager.rollback();

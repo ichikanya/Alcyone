@@ -10,6 +10,7 @@ var fs = require("fs");
 var os = require("os");
 var path = require("path");
 var budgetLib = require("../app/service/lib/vpn/recovery-budget");
+var managerLib = require("../app/service/lib/vpn/manager");
 
 var dir = fs.mkdtempSync(path.join(os.tmpdir(), "alcyone-budget-"));
 var file = path.join(dir, "recovery-budget.json");
@@ -102,4 +103,32 @@ fs.writeFileSync(file, JSON.stringify({ version: 1, attempts: [now - 1000, now -
 var b5 = makeBudget();
 var st = b5.status();
 assert.strictEqual(st.windowAttempts, 2 && st.maxAttempts === 3 ? 2 : -1, "status reports attempts in window");
+
+/* The persistent budget is the sole restart-storm authority. A second
+   incident must still reach it instead of being stranded by an extra
+   in-memory 30-minute breaker in VpnManager. */
+var manager = Object.create(managerLib.VpnManager.prototype);
+var planned = 0;
+var committed = 0;
+manager.state = managerLib.STATE.CONNECTED;
+manager.cleanupInProgress = null;
+manager.breakerOpen = false;
+manager.lastWatchdogIncidentAt = 0;
+manager.logger = { info: function () {}, warn: function () {}, error: function () {} };
+manager.routes = { physicalRestored: function () { return true; } };
+manager.recoveryBudget = {
+  plan: function () { planned++; return { allowed: true, readyAt: Date.now() }; },
+  commitAttempt: function () { committed++; },
+};
+manager.cleanup = function (callback) { manager.state = managerLib.STATE.IDLE; callback(null); };
+manager.connect = function (callback) { manager.state = managerLib.STATE.CONNECTED; callback(null); };
+manager.setTimeout = function (callback) {
+  callback();
+  return { unref: function () {} };
+};
+manager.failSafe("LIVENESS_FAILED", "first");
+manager.failSafe("LIVENESS_FAILED", "second");
+assert.strictEqual(planned, 2, "repeated incidents are both planned by the persistent budget");
+assert.strictEqual(committed, 2, "each reconnect spends exactly one budget attempt");
+assert.strictEqual(manager.breakerOpen, false, "a second incident does not create an unbounded off state");
 console.log("recovery budget tests passed");

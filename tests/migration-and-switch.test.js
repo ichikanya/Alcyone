@@ -188,17 +188,50 @@ var orphanMigrator = new migrateLib.Migrator({
   procRoot: procDir,
   procReadlink: function (target) {
     return /[\\/]700[\\/]exe$/.test(target)
-      ? path.join(paths.dataDir, "bin", "xray")
+      ? path.join(paths.dataDir, "bin", "xray") + " (deleted)"
       : "/usr/bin/unrelated-process";
   },
   kill: function (pid, signal) {
     killed.push(String(pid) + ":" + signal);
   },
+  setTimeout: function (callback) {
+    callback();
+    return { unref: function () {} };
+  },
 });
 record(
   "restart recovery terminates only an orphaned core owned by this edition",
   orphanMigrator.stopOwnedCoreOrphans().join(",") === "700" &&
-    killed.join(",") === "700:SIGTERM",
+    killed.join(",") === "700:SIGTERM,700:SIGKILL",
+);
+
+var reusedPidReads = 0;
+var reusedPidKills = [];
+var reusedPidMigrator = new migrateLib.Migrator({
+  paths: paths,
+  edition: { id: "xray", core: "xray" },
+  logger: quiet,
+  procRoot: procDir,
+  procReadlink: function (target) {
+    if (!/[\\/]700[\\/]exe$/.test(target))
+      return "/usr/bin/unrelated-process";
+    reusedPidReads++;
+    return reusedPidReads === 1
+      ? path.join(paths.dataDir, "bin", "xray")
+      : "/usr/bin/reused-pid";
+  },
+  kill: function (pid, signal) {
+    reusedPidKills.push(String(pid) + ":" + signal);
+  },
+  setTimeout: function (callback) {
+    callback();
+    return { unref: function () {} };
+  },
+});
+reusedPidMigrator.stopOwnedCoreOrphans();
+record(
+  "orphan recovery never SIGKILLs a PID whose executable identity changed",
+  reusedPidKills.join(",") === "700:SIGTERM",
 );
 
 /* A legacy bare-array store must be upgraded without loss. */

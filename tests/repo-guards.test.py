@@ -119,9 +119,12 @@ def main():
     builder_source = open(os.path.join(ROOT, "build_ipk.py"), encoding="utf-8").read()
     official_packaging = (
         "ares-package" in builder_source
-        and "subprocess.run" in builder_source
-        and "ar_member(" not in builder_source
-        and "build_control_tar(" not in builder_source
+        and re.search(r"\bsubprocess\.run\s*\(", builder_source)
+        # Reject the retired from-scratch IPK builder helpers, but allow the
+        # narrowly scoped replace_ar_member() normalizer that repairs Windows
+        # tar execute bits after the official packager has produced the IPK.
+        and not re.search(r"(?m)^def\s+ar_member\s*\(", builder_source)
+        and not re.search(r"(?m)^def\s+build_control_tar\s*\(", builder_source)
         and not os.path.exists(os.path.join(ROOT, "CONTROL", "control.in"))
     )
     print(("ok   - " if official_packaging else "FAIL - ") + "builder delegates IPK creation to ares-package")

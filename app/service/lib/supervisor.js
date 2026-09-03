@@ -71,6 +71,31 @@ function resolveFailureReason(e) {
     }
   return i ? "EACCES" : "ENOENT";
 }
+function procExecutableMatches(e, r) {
+  return e === r || e === r + " (deleted)";
+}
+function findExecutablePids(e, r) {
+  var t,
+    i,
+    n,
+    o = [],
+    s = (r && r.procRoot) || "/proc",
+    c = (r && r.procReadlink) || fs.readlinkSync,
+    u = (r && r.currentPid) || process.pid;
+  try {
+    t = fs.readdirSync(s);
+  } catch (e) {
+    return o;
+  }
+  for (i = 0; i < t.length; i++)
+    if (/^[1-9]\d*$/.test(t[i]) && (n = parseInt(t[i], 10)) !== u)
+      try {
+        procExecutableMatches(c(path.join(s, t[i], "exe")), e) && o.push(n);
+      } catch (e) {}
+  return o.sort(function (e, r) {
+    return e - r;
+  });
+}
 function Supervisor(e) {
   ((e = e || {}),
     (this.logger = e.logger),
@@ -78,6 +103,12 @@ function Supervisor(e) {
     (this.onExit = e.onExit || null),
     (this.maxProcesses = e.maxProcesses || MAX_PROCESSES),
     (this.stopGraceMs = e.stopGraceMs || STOP_GRACE_MS),
+    (this.ownedExecutableDir = e.ownedExecutableDir || ""),
+    (this.findExecutablePids =
+      e.findExecutablePids ||
+      function (e) {
+        return findExecutablePids(e);
+      }),
     (this.generation = 0));
 }
 function waitFor(e, r, t) {
@@ -151,6 +182,17 @@ function waitFor(e, r, t) {
       if (u.exists) throw err("CORE_INTEGRITY_FAILED", e);
       throw err("CORE_MISSING", e);
     }
+    if (
+      this.ownedExecutableDir &&
+      path.dirname(r) === path.resolve(this.ownedExecutableDir)
+    ) {
+      var ownedPids = this.findExecutablePids(r);
+      if (ownedPids.length)
+        throw err(
+          "ALREADY_RUNNING",
+          e + " still exists as pid " + ownedPids.join(","),
+        );
+    }
     var l =
       "ignore" === (i = i || {}).stdio
         ? "ignore"
@@ -196,8 +238,19 @@ function waitFor(e, r, t) {
       }),
       (this.children[e] = s),
       n.on("error", function (r) {
-        c.children[e] === s &&
-          ((s.exited = !0),
+        if (c.children[e] !== s || s.exited) return;
+        /* ChildProcess also emits "error" when signalling an existing PID
+           fails (for example EPERM). That is NOT proof that the kernel has
+           reaped the core, so only a pre-spawn error with no PID is terminal. */
+        if (s.pid)
+          return (
+            c.logger &&
+              c.logger.error("core process control failed", {
+                core: e,
+                detail: r && r.code ? String(r.code) : "process error",
+              })
+          );
+        ((s.exited = !0),
           (s.spawnError = !0),
           (s.spawnErrorCode = r && r.code ? String(r.code) : "spawn error"),
           c.logger &&
@@ -239,16 +292,27 @@ function waitFor(e, r, t) {
   (Supervisor.prototype.stop = function (e, r) {
     var t,
       i = this.children[e],
-      n = this,
-      o = !1;
+      n = this;
     if (((r = r || function () {}), !i)) return r();
     if (i.exited) return (delete this.children[e], r());
+    if (i.stopping)
+      return (i.stopWaiters || (i.stopWaiters = [])).push(r);
+    ((i.stopping = !0), (i.stopWaiters = [r]));
     function s() {
-      o ||
-        ((o = !0),
-        t && (clearTimeout(t), (t = null)),
-        n.children[e] === i && delete n.children[e],
-        r());
+      var r,
+        o = i.stopWaiters || [];
+      if (!i.stopConfirmed) {
+        for (
+          i.stopConfirmed = !0,
+            t && (clearTimeout(t), (t = null)),
+            n.children[e] === i && delete n.children[e],
+            i.stopWaiters = [],
+            r = 0;
+          r < o.length;
+          r++
+        )
+          o[r]();
+      }
     }
     i.child.once("exit", s);
     try {
@@ -256,9 +320,13 @@ function waitFor(e, r, t) {
     } catch (e) {}
     t = setTimeout(function () {
       try {
-        i.child.kill("SIGKILL");
+        ((i.forceKillSentAt = Date.now()), i.child.kill("SIGKILL"));
       } catch (e) {}
-      s();
+      n.logger &&
+        n.logger.warn("core force-stop requested; awaiting confirmed exit", {
+          core: i.name,
+          pid: i.pid,
+        });
     }, this.stopGraceMs);
   }),
   (Supervisor.prototype.stopAll = function (e) {
@@ -278,7 +346,13 @@ function waitFor(e, r, t) {
     for (e in this.children)
       Object.prototype.hasOwnProperty.call(this.children, e) &&
         ((r = this.children[e]),
-        (t[e] = { pid: r.pid, running: !r.exited, startedAt: r.startedAt }));
+        (t[e] = {
+          pid: r.pid,
+          running: !r.exited,
+          stopping: !!r.stopping,
+          forceKillSentAt: r.forceKillSentAt || 0,
+          startedAt: r.startedAt,
+        }));
     return t;
   }),
   (module.exports = {
@@ -289,5 +363,7 @@ function waitFor(e, r, t) {
     isPermissionDenied: isPermissionDenied,
     resolveExecutable: resolveExecutable,
     resolveFailureReason: resolveFailureReason,
+    procExecutableMatches: procExecutableMatches,
+    findExecutablePids: findExecutablePids,
     waitFor: waitFor,
   }));

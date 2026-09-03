@@ -5,8 +5,15 @@ var path = require("path");
 var TICK_MS = 15000;
 var CONNECT_GRACE_MS = 90000;
 var IDLE_PROBE_MS = 30000;
+var TRAFFIC_EVIDENCE_MS = 2 * TICK_MS + 5000;
 var RSS_WARMUP_MS = 10 * 60 * 1000;
 var RSS_WINDOW_MS = 30 * 60 * 1000;
+/* TV memory collapses long before Xray's intentionally generous RLIMIT.
+   Real incidents reached thousands of recursive sockets in under 90s, so
+   absolute count and one-tick growth are stronger signals than ratio alone. */
+var FD_ABSOLUTE_LIMIT = 512;
+var FD_GROWTH_LIMIT = 256;
+var FD_COMBINED_LIMIT = 768;
 
 function numberFile(file) {
   try {
@@ -84,11 +91,13 @@ function Watchdog(options) {
   this.timer = null;
   this.startedAt = 0;
   this.lastCounters = null;
+  this.lastBidirectionalAt = 0;
   this.lastProbeOkAt = 0;
   this.failedProbes = 0;
   this.probeBusy = false;
   this.fdHighSamples = 0;
   this.fdCriticalSamples = 0;
+  this.lastFdByProcess = {};
   this.lowMemorySamples = 0;
   this.rssSamples = [];
   this.baselineRssKb = 0;
@@ -125,11 +134,15 @@ Watchdog.prototype.processMetrics = function () {
 
 Watchdog.prototype.openIncident = function (code, detail) {
   if (this.incidentOpen) return;
-  /* Post-connect ramp-up window: FD counts and probes legitimately wobble
-     while the core warms up (observed EMFILE storm starting ~25s in).
-     During the grace period an incident degrades to a visible warning so
-     the user sees pressure without a disconnect loop. */
-  if (this.now() < this.graceUntil && "RESOURCE_PRESSURE" !== code) {
+  /* Post-connect probes legitimately wobble, so liveness incidents degrade
+     to warnings during warm-up.  Resource/FD runaway is never graced: the
+     real recursion incident started inside this window and endangered the
+     whole TV long before the process ratio looked critical. */
+  if (
+    this.now() < this.graceUntil &&
+    "RESOURCE_PRESSURE" !== code &&
+    "FD_EXHAUSTION_RISK" !== code
+  ) {
     this.snapshot.warning = code + "_GRACE";
     return;
   }
@@ -142,21 +155,53 @@ Watchdog.prototype.openIncident = function (code, detail) {
 Watchdog.prototype.checkResources = function (now) {
   var metrics = this.processMetrics();
   var combinedRss = 0;
+  var combinedFds = 0;
   var maximumFdRatio = 0;
-  var i;
+  var maximumFdCount = 0;
+  var maximumFdGrowth = 0;
+  var currentFdByProcess = {};
+  var i, processKey, previousFd, fdGrowth;
   for (i = 0; i < metrics.length; i++) {
     if (metrics[i].rssKb !== null) combinedRss += metrics[i].rssKb;
+    if (metrics[i].fdCount !== null) {
+      processKey = String(metrics[i].name) + ":" + String(metrics[i].pid);
+      previousFd = this.lastFdByProcess[processKey];
+      fdGrowth = previousFd === undefined ? 0 : metrics[i].fdCount - previousFd;
+      currentFdByProcess[processKey] = metrics[i].fdCount;
+      combinedFds += metrics[i].fdCount;
+      if (metrics[i].fdCount > maximumFdCount)
+        maximumFdCount = metrics[i].fdCount;
+      if (fdGrowth > maximumFdGrowth) maximumFdGrowth = fdGrowth;
+    }
     if (metrics[i].fdRatio !== null && metrics[i].fdRatio > maximumFdRatio)
       maximumFdRatio = metrics[i].fdRatio;
   }
+  this.lastFdByProcess = currentFdByProcess;
   this.snapshot.processes = metrics;
   this.snapshot.maximumFdRatio = maximumFdRatio;
+  this.snapshot.maximumFdCount = maximumFdCount;
+  this.snapshot.maximumFdGrowth = maximumFdGrowth;
+  this.snapshot.combinedFds = combinedFds;
   this.fdCriticalSamples = maximumFdRatio >= 0.95 ? this.fdCriticalSamples + 1 : 0;
   this.fdHighSamples = maximumFdRatio >= 0.85 ? this.fdHighSamples + 1 : 0;
   if (this.fdCriticalSamples >= 2 || this.fdHighSamples >= 4)
     this.snapshot.warning = "FD_PRESSURE_SUSTAINED";
   else
     this.snapshot.warning = maximumFdRatio >= 0.70 ? "FD_PRESSURE" : "";
+  if (
+    maximumFdCount >= FD_ABSOLUTE_LIMIT ||
+    maximumFdGrowth >= FD_GROWTH_LIMIT ||
+    combinedFds >= FD_COMBINED_LIMIT
+  )
+    return this.openIncident(
+      "FD_EXHAUSTION_RISK",
+      "fd-runaway count=" +
+        maximumFdCount +
+        " growth=" +
+        maximumFdGrowth +
+        " combined=" +
+        combinedFds,
+    );
   /* EMFILE history on real devices: a core approaching its descriptor
      ceiling is a functional failure in progress, not a cosmetic warning.
      Two consecutive critical samples (~30s) escalate to an incident so
@@ -205,6 +250,7 @@ Watchdog.prototype.tick = function () {
   var bothGrew = !!this.lastCounters &&
     counters.rx !== null && counters.tx !== null &&
     counters.rx > this.lastCounters.rx && counters.tx > this.lastCounters.tx;
+  if (bothGrew) this.lastBidirectionalAt = now;
   if (counters.rx === null || counters.tx === null ||
       (this.lastCounters && (counters.rx < this.lastCounters.rx || counters.tx < this.lastCounters.tx))) {
     /* interface recreated: stale baselines mean nothing */
@@ -227,11 +273,30 @@ Watchdog.prototype.tick = function () {
     if (ok) {
       self.failedProbes = 0;
       self.lastProbeOkAt = self.now();
-      if ("LIVENESS_PROBE_FAILED" === self.snapshot.warning)
+      self.snapshot.failedProbes = 0;
+      if (
+        "LIVENESS_PROBE_FAILED" === self.snapshot.warning ||
+        "LIVENESS_PROBE_FAILED_TRAFFIC_OK" === self.snapshot.warning
+      )
         self.snapshot.warning = "";
       return;
     }
+    /* Public connectivity-check sites are evidence, not an authority over
+       real user traffic. Providers and captive/CDN edges occasionally block
+       every probe URL while YouTube continues moving data through the TUN.
+       Restarting a demonstrably active tunnel turns a harmless probe outage
+       into the user-visible disconnect we are trying to prevent. */
+    if (
+      self.lastBidirectionalAt &&
+      self.now() - self.lastBidirectionalAt <= TRAFFIC_EVIDENCE_MS
+    ) {
+      self.failedProbes = 0;
+      self.snapshot.failedProbes = 0;
+      self.snapshot.warning = "LIVENESS_PROBE_FAILED_TRAFFIC_OK";
+      return;
+    }
     self.failedProbes++;
+    self.snapshot.failedProbes = self.failedProbes;
     self.snapshot.warning = "LIVENESS_PROBE_FAILED";
     /* A live-but-hung core (SIGSTOP, blackhole, EMFILE'd accept) must be
        handed to recovery, not merely described. Three consecutive
@@ -247,10 +312,12 @@ Watchdog.prototype.start = function () {
   this.graceUntil = this.startedAt + CONNECT_GRACE_MS;
   this.lastProbeOkAt = 0;
   this.lastCounters = null;
+  this.lastBidirectionalAt = 0;
   this.failedProbes = 0;
   this.probeBusy = false;
   this.fdHighSamples = 0;
   this.fdCriticalSamples = 0;
+  this.lastFdByProcess = {};
   this.lowMemorySamples = 0;
   this.rssSamples = [];
   this.baselineRssKb = 0;
@@ -273,8 +340,12 @@ Watchdog.prototype.status = function () { return this.snapshot; };
 module.exports = {
   TICK_MS: TICK_MS,
   IDLE_PROBE_MS: IDLE_PROBE_MS,
+  TRAFFIC_EVIDENCE_MS: TRAFFIC_EVIDENCE_MS,
   RSS_WARMUP_MS: RSS_WARMUP_MS,
   RSS_WINDOW_MS: RSS_WINDOW_MS,
+  FD_ABSOLUTE_LIMIT: FD_ABSOLUTE_LIMIT,
+  FD_GROWTH_LIMIT: FD_GROWTH_LIMIT,
+  FD_COMBINED_LIMIT: FD_COMBINED_LIMIT,
   numberFile: numberFile,
   readStatus: readStatus,
   readNofileLimit: readNofileLimit,

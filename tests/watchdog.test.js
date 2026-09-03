@@ -11,8 +11,8 @@ var watchdogLib = require("../app/service/lib/vpn/watchdog");
    - one-way traffic never suppresses the probe;
    - three consecutive failed probes escalate to LIVENESS_FAILED;
    - sustained critical FD pressure escalates to FD_EXHAUSTION_RISK;
-   - everything inside the 90s post-connect grace window degrades to a
-     visible *_GRACE warning instead of disconnecting;
+   - liveness failures inside the 90s post-connect grace window degrade to a
+     visible *_GRACE warning, but runaway FDs stop immediately;
    - single failures and low memory stay non-disconnecting. */
 
 var temp = fs.mkdtempSync(path.join(os.tmpdir(), "alcyone-watchdog-"));
@@ -64,6 +64,26 @@ step(15000); setCounters(500, 100); oneway.tick();
 assert.strictEqual(probes, 1, "one-way UDP growth must not suppress the functional probe");
 oneway.stop();
 
+/* --- failed public probes cannot tear down proven user traffic --- */
+setCounters(100, 100);
+var trafficProof = makeWatchdog(function (cb) { cb(null, false); });
+step(GRACE + 1000);
+setCounters(200, 220); trafficProof.tick();
+step(15000); setCounters(300, 340); trafficProof.tick();
+step(15000); setCounters(400, 460); trafficProof.tick();
+assert.deepStrictEqual(
+  incidents,
+  [],
+  "three failed probe rounds must not disconnect a tunnel carrying bidirectional traffic",
+);
+assert.strictEqual(trafficProof.failedProbes, 0, "traffic evidence resets the failure streak");
+assert.strictEqual(
+  trafficProof.status().warning,
+  "LIVENESS_PROBE_FAILED_TRAFFIC_OK",
+  "probe degradation remains observable without becoming destructive",
+);
+trafficProof.stop();
+
 /* --- inside grace: repeated failures warn, never disconnect --- */
 setCounters(10, 10);
 var graced = makeWatchdog(function (cb) { cb(null, false); });
@@ -105,6 +125,34 @@ step(15000);
 fdWatchdog.tick();          /* sample 2 -> escalate */
 assert.deepStrictEqual(incidents, ["FD_EXHAUSTION_RISK"], "sustained near-limit FD escalates");
 fdWatchdog.stop();
+
+/* --- absolute TV-safe FD guard bypasses grace and ratio blind spots --- */
+var fdRunaway = makeWatchdog(function (cb) { cb(null, true); }, function () {
+  return [{ running: true, name: "xray", pid: 7, rssKb: 1, fdCount: 513, fdLimit: 32768, fdRatio: 513 / 32768 }];
+});
+fdRunaway.tick();
+assert.deepStrictEqual(
+  incidents,
+  ["FD_EXHAUSTION_RISK"],
+  "absolute runaway FD count must stop even during connect grace",
+);
+fdRunaway.stop();
+
+/* --- explosive one-tick growth stops below the absolute ceiling --- */
+var fdSamples = [100, 380];
+var fdGrowth = makeWatchdog(function (cb) { cb(null, true); }, function () {
+  var count = fdSamples.shift();
+  return [{ running: true, name: "xray", pid: 8, rssKb: 1, fdCount: count, fdLimit: 32768, fdRatio: count / 32768 }];
+});
+fdGrowth.tick();
+assert.deepStrictEqual(incidents, [], "first low-ratio FD sample establishes a baseline");
+fdGrowth.tick();
+assert.deepStrictEqual(
+  incidents,
+  ["FD_EXHAUSTION_RISK"],
+  "explosive FD growth must stop before the absolute limit",
+);
+fdGrowth.stop();
 
 /* --- moderate FD pressure alone never escalates --- */
 var fdModerate = makeWatchdog(function (cb) { cb(null, true); }, function () {

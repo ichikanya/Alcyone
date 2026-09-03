@@ -414,7 +414,9 @@ var fullSource = {
   routing: { domainStrategy: "AsIs", rules: [] },
 };
 var sourceBefore = JSON.stringify(fullSource);
-var fullBuilt = xray.buildFullConfig(fullSource, pin);
+var fullBuilt = xray.buildFullConfig(fullSource, pin, {
+  physicalInterface: "eth-test0",
+});
 
 record(
   "full imported XRay config preserves user DNS settings",
@@ -434,6 +436,12 @@ record(
   "AsIs is replaced only on a matching XRay outbound",
   fullBuilt.outbounds[1].streamSettings.sockopt.domainStrategy === "UseIP" &&
     fullBuilt.outbounds[2].streamSettings.sockopt.domainStrategy === undefined,
+);
+record(
+  "full-config freedom sockets are pinned outside the TUN recursion path",
+  fullBuilt.outbounds[2].streamSettings.sockopt.interface === "eth-test0" &&
+    fullBuilt.outbounds[2].streamSettings.sockopt.mark === 9 &&
+    fullBuilt.outbounds[0].streamSettings.sockopt.interface === undefined,
 );
 record(
   "XRay full-config endpoint domains remain unchanged",
@@ -619,6 +627,9 @@ function managerHarness(options) {
     return true;
   };
   manager.routes.directRoutesActive = function () {
+    return true;
+  };
+  manager.routes.serverBypassesActive = function () {
     return true;
   };
   manager.routes.tunExists = function () {
