@@ -48,7 +48,7 @@ jobs:
           bash tools/build-cores.sh
           python tests/binary-provenance.test.py
       - name: Build official verification IPKs
-        run: python build_ipk.py --edition all --output-dir release-assets
+        run: python build_ipk.py --edition all --output-dir build/verification-ipks
       - name: Syntax checks
         run: |
           node --check app/app.js

@@ -144,6 +144,15 @@ def main():
     )
     print(("ok   - " if pinned_zig else "FAIL - ") + "release CI installs verified Zig 0.16.0")
 
+    immutable_release_assets = (
+        "--output-dir build/verification-ipks" in workflow_source
+        and "--output-dir release-assets" not in workflow_source
+    )
+    print(
+        ("ok   - " if immutable_release_assets else "FAIL - ")
+        + "CI verification builds never overwrite canonical release assets"
+    )
+
     # The sanitizer legitimately reads profile.link to derive a display label,
     # so inspect what it actually emits rather than the source text.
     sanitizer_ok = True
@@ -182,7 +191,13 @@ def main():
     print(("ok   - " if sanitizer_ok else "FAIL - ") + "sanitized profiles carry no secret fields")
 
     print("\nscanned %d files" % scanned)
-    if findings or not official_packaging or not pinned_zig or not sanitizer_ok:
+    if (
+        findings
+        or not official_packaging
+        or not pinned_zig
+        or not immutable_release_assets
+        or not sanitizer_ok
+    ):
         sys.exit(1)
 
 
