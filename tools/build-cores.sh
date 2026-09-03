@@ -5,7 +5,7 @@
 # and exact source commits make every network input reviewable and fail closed.
 #
 # Usage:
-#   tools/build-cores.sh [all|xray|tun2socks|sing-box]
+#   tools/build-cores.sh [all|xray|tun2socks|sing-box|launcher]
 #
 # Environment:
 #   BUILD_ROOT  temporary source/work directory
@@ -18,6 +18,7 @@ BUILD_ROOT="${BUILD_ROOT:-${TMPDIR:-/tmp}/alcyone-core-build}"
 OUT_DIR="${OUT_DIR:-${ROOT}/build/cores}"
 
 GO_VERSION="1.26.1"
+ZIG_VERSION="0.16.0"
 XRAY_REPO="https://github.com/XTLS/Xray-core.git"
 XRAY_TAG="v26.3.27"
 XRAY_COMMIT="d2758a023cd7f4174a5a5fa4ff66e487d4342ba0"
@@ -132,23 +133,57 @@ build_singbox() {
     report "${OUT_DIR}/sing-box/sing-box"
 }
 
+build_launcher() {
+    command -v zig >/dev/null 2>&1 || die "zig toolchain not found"
+    actual_zig="$(zig version 2>/dev/null || echo unknown)"
+    [ "${actual_zig}" = "${ZIG_VERSION}" ] ||
+        die "expected zig ${ZIG_VERSION}, got ${actual_zig}"
+    mkdir -p -- "${OUT_DIR}/launcher"
+    zig cc -target arm-linux-musleabihf -Os -static -s \
+        -o "${OUT_DIR}/launcher/alcyone-exec" "${ROOT}/tools/alcyone-exec.c"
+    size="$(wc -c < "${OUT_DIR}/launcher/alcyone-exec" | tr -d ' ')"
+    [ "${size}" -le 65536 ] || die "alcyone-exec exceeds 64 KiB: ${size}"
+    chmod 755 "${OUT_DIR}/launcher/alcyone-exec"
+    report "${OUT_DIR}/launcher/alcyone-exec"
+}
+
+build_netguard() {
+    # Same contract as the launcher: static musl ARMv7 hard-float, no
+    # dynamic dependencies. The guardian is the last line of defense for
+    # ordinary internet; its size ceiling stays bounded on principle.
+    command -v zig >/dev/null 2>&1 || die "zig toolchain not found"
+    actual_zig="$(zig version 2>/dev/null || echo unknown)"
+    [ "${actual_zig}" = "${ZIG_VERSION}" ] ||
+        die "expected zig ${ZIG_VERSION}, got ${actual_zig}"
+    mkdir -p -- "${OUT_DIR}/netguard"
+    zig cc -target arm-linux-musleabihf -Os -static -s \
+        -o "${OUT_DIR}/netguard/alcyone-netguard" "${ROOT}/tools/alcyone-netguard.c"
+    size="$(wc -c < "${OUT_DIR}/netguard/alcyone-netguard" | tr -d ' ')"
+    [ "${size}" -le 131072 ] || die "alcyone-netguard exceeds 128 KiB: ${size}"
+    chmod 755 "${OUT_DIR}/netguard/alcyone-netguard"
+    report "${OUT_DIR}/netguard/alcyone-netguard"
+}
+
 main() {
     command -v git >/dev/null 2>&1 || die "git not found"
-    command -v go >/dev/null 2>&1 || die "go toolchain not found"
-    actual_go="$(go env GOVERSION 2>/dev/null || echo unknown)"
-    [ "${actual_go}" = "go${GO_VERSION}" ] ||
-        die "expected go${GO_VERSION}, got ${actual_go}"
-
-    log "toolchain ${actual_go}; target ${GOOS}/${GOARCH}v${GOARM}"
-    log "xray ${XRAY_TAG}; tun2socks ${TUN2SOCKS_TAG}; sing-box ${SINGBOX_TAG}"
     mkdir -p -- "${BUILD_ROOT}/src" "${OUT_DIR}"
 
     target="${1:-all}"
+    if [ "${target}" != "launcher" ]; then
+        command -v go >/dev/null 2>&1 || die "go toolchain not found"
+        actual_go="$(go env GOVERSION 2>/dev/null || echo unknown)"
+        [ "${actual_go}" = "go${GO_VERSION}" ] ||
+            die "expected go${GO_VERSION}, got ${actual_go}"
+        log "toolchain ${actual_go}; target ${GOOS}/${GOARCH}v${GOARM}"
+        log "xray ${XRAY_TAG}; tun2socks ${TUN2SOCKS_TAG}; sing-box ${SINGBOX_TAG}"
+    fi
     case "${target}" in
-        all) build_xray; build_tun2socks; build_singbox ;;
+        all) build_xray; build_tun2socks; build_singbox; build_launcher; build_netguard ;;
         xray) build_xray ;;
         tun2socks) build_tun2socks ;;
         sing-box) build_singbox ;;
+        launcher) build_launcher ;;
+        netguard) build_netguard ;;
         *) die "unknown component: ${target}" ;;
     esac
 }

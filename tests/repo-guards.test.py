@@ -119,12 +119,39 @@ def main():
     builder_source = open(os.path.join(ROOT, "build_ipk.py"), encoding="utf-8").read()
     official_packaging = (
         "ares-package" in builder_source
-        and "subprocess.run" in builder_source
-        and "ar_member(" not in builder_source
-        and "build_control_tar(" not in builder_source
+        and re.search(r"\bsubprocess\.run\s*\(", builder_source)
+        # Reject the retired from-scratch IPK builder helpers, but allow the
+        # narrowly scoped replace_ar_member() normalizer that repairs Windows
+        # tar execute bits after the official packager has produced the IPK.
+        and not re.search(r"(?m)^def\s+ar_member\s*\(", builder_source)
+        and not re.search(r"(?m)^def\s+build_control_tar\s*\(", builder_source)
         and not os.path.exists(os.path.join(ROOT, "CONTROL", "control.in"))
     )
     print(("ok   - " if official_packaging else "FAIL - ") + "builder delegates IPK creation to ares-package")
+
+    workflow_source = open(
+        os.path.join(ROOT, ".github", "workflows", "release.yml"),
+        encoding="utf-8",
+    ).read()
+    zig_sha256 = "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
+    pinned_zig = (
+        'zig_version="0.16.0"' in workflow_source
+        and "https://ziglang.org/download/" in workflow_source
+        and "zig-x86_64-linux-${zig_version}.tar.xz" in workflow_source
+        and zig_sha256 in workflow_source
+        and "sha256sum -c -" in workflow_source
+        and '>> "${GITHUB_PATH}"' in workflow_source
+    )
+    print(("ok   - " if pinned_zig else "FAIL - ") + "release CI installs verified Zig 0.16.0")
+
+    immutable_release_assets = (
+        "--output-dir build/verification-ipks" in workflow_source
+        and "--output-dir release-assets" not in workflow_source
+    )
+    print(
+        ("ok   - " if immutable_release_assets else "FAIL - ")
+        + "CI verification builds never overwrite canonical release assets"
+    )
 
     # The sanitizer legitimately reads profile.link to derive a display label,
     # so inspect what it actually emits rather than the source text.
@@ -164,7 +191,13 @@ def main():
     print(("ok   - " if sanitizer_ok else "FAIL - ") + "sanitized profiles carry no secret fields")
 
     print("\nscanned %d files" % scanned)
-    if findings or not official_packaging or not sanitizer_ok:
+    if (
+        findings
+        or not official_packaging
+        or not pinned_zig
+        or not immutable_release_assets
+        or not sanitizer_ok
+    ):
         sys.exit(1)
 
 

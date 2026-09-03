@@ -2,3 +2,9 @@
 /.tmp-*/
 __pycache__/
 node_modules/
+
+# Local Repowise index and generated agent guidance
+/.repowise/
+/.claude/
+/.vscode/
+/.mcp.json

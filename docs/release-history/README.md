@@ -3,6 +3,7 @@
 This folder preserves Alcyone's complete published release history.
 
 - [Changelog](CHANGELOG.md)
+- [4.2.0 release notes](RELEASE_NOTES_4.2.0.md)
 - [4.0.4 release notes](RELEASE_NOTES_4.0.4.md)
 - [4.0.3 release notes](RELEASE_NOTES_4.0.3.md)
 - [4.0.0 release notes](RELEASE_NOTES_4.0.0.md)

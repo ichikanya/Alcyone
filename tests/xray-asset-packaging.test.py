@@ -19,7 +19,7 @@ EXPECTED = {
     "geosite.dat": ("adf92de0cfc70e458b399f04c5f912bf42d115ed7e37281b30e2f1c68605e4e9", 10491954),
     "geoip.dat": ("744c97b74c52bae2ac8664fef6ac481d7765cb8432a0df54f0368a88b9b4a354", 19768301),
 }
-VERSION = "4.0.4"
+VERSION = getattr(BUILDER, "VERSION", "4.2.0")
 
 
 def sha256(data):
@@ -95,7 +95,7 @@ def main():
                 assert (sha256(data), len(data)) == expected
                 if os.name != "nt":
                     assert member.mode == 0o644
-    print("ok - Xray 4.0.4 official packaging, metadata, resolver and pinned assets are canonical")
+    print("ok - Xray 4.2.0 official packaging, metadata, resolver and pinned assets are canonical")
 
 
 if __name__ == "__main__":

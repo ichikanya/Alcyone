@@ -1,171 +1,95 @@
-'use strict';
-
-/* Runtime privilege facts.
-
-   Root is granted by Homebrew Channel's elevate-service mechanism, never by
-   anything this service does. This module only *observes* the result.
-
-   Why it exists: a jailed service and a package with missing cores look
-   identical to the core resolver. `supervisor.isExecutableFile()` used to treat
-   an EACCES from the jail exactly like a missing file, so `connect()` reported
-   CORE_MISSING when the real problem is that elevation was reset by the last
-   package install. Observing the process identity separates the two.
-
-   Observation only: no shell, no spawn, no writes, no directory creation. The
-   filesystem facts below are read-only access probes — `fs.accessSync` asks the
-   kernel a question, it does not touch, create or modify anything under the
-   data directory.
-
-   Separation of facts is deliberate. `uid === 0` is the *authoritative* Alcyone
-   elevation condition. `appPayloadReadable`, `dataDirWritable` and `tunVisible`
-   are independent diagnostics that are frequently *consequences* of the jail,
-   never substitutes for it: a genuinely elevated service with a damaged data
-   directory must not be misreported as un-elevated, and a jailed service that
-   happens to see /dev/net/tun must not be reported as elevated.
-
-   Written to ES5 for the Node runtime on webOS 4. */
-
-var fs = require('fs');
-
-var CACHE_MS = 2000;
-
-var cached = null;
-var cachedAt = 0;
-var cachedKey = '';
-
-/* uid === 0 is the authoritative elevation condition on the target platform.
-
-   When the runtime does not expose getuid (workstation tests on a platform
-   without POSIX ids) the honest answer is `null` — unknown — not `false`.
-   Reporting false there would invent an elevation failure that no caller can
-   verify, and callers are expected to treat null as "do not conclude". */
+"use strict";
+var fs = require("fs"),
+  CACHE_MS = 2e3,
+  cached = null,
+  cachedAt = 0,
+  cachedKey = "";
 function readRoot() {
-  if (typeof process.getuid !== 'function') return null;
+  if ("function" != typeof process.getuid) return null;
   try {
-    return process.getuid() === 0;
+    return 0 === process.getuid();
   } catch (e) {
     return null;
   }
 }
-
 function readUid() {
-  if (typeof process.getuid !== 'function') return -1;
+  if ("function" != typeof process.getuid) return -1;
   try {
     return process.getuid();
   } catch (e) {
     return -1;
   }
 }
-
-function accessMode(name, fallback) {
-  if (fs.constants && fs.constants[name] !== undefined) return fs.constants[name];
-  if (fs[name] !== undefined) return fs[name];
-  return fallback;
+function accessMode(e, a) {
+  return fs.constants && void 0 !== fs.constants[e]
+    ? fs.constants[e]
+    : void 0 !== fs[e]
+      ? fs[e]
+      : a;
 }
-
-/* Read-only access probe. `null` means "could not determine", which is not the
-   same as `false` and must never be treated as one. */
-function canAccess(target, mode) {
-  if (!target) return null;
-  if (typeof fs.accessSync !== 'function' || mode === undefined) return null;
+function canAccess(e, a) {
+  if (!e) return null;
+  if ("function" != typeof fs.accessSync || void 0 === a) return null;
   try {
-    fs.accessSync(target, mode);
-    return true;
+    return (fs.accessSync(e, a), !0);
   } catch (e) {
-    /* ENOENT is a genuine "not there"; EACCES is a genuine "not permitted".
-       Both are legitimate `false` answers to the question asked. Anything else
-       is an unknown and stays null so no caller concludes from noise. */
-    if (e && (e.code === 'ENOENT' || e.code === 'EACCES' || e.code === 'EPERM')) return false;
-    return null;
+    return (
+      (!e ||
+        ("ENOENT" !== e.code && "EACCES" !== e.code && "EPERM" !== e.code)) &&
+      null
+    );
   }
 }
-
-/* Does this process see the packaged application payload?
-
-   A jailed service can usually still read the application tree, so this being
-   true says nothing about elevation. It is recorded because a *false* value
-   distinguishes a broken or partial installation from a jail. */
-function readAppPayloadReadable(paths) {
-  var appDir = paths && paths.appDir;
-  if (!appDir) return null;
-  var r = accessMode('R_OK', 4);
-  var x = accessMode('X_OK', 1);
-  if (r === undefined || x === undefined) return null;
-  return canAccess(appDir + '/bin', r | x);
+function readAppPayloadReadable(e) {
+  var a = e && e.appDir;
+  if (!a) return null;
+  var c = accessMode("R_OK", 4),
+    r = accessMode("X_OK", 1);
+  return void 0 === c || void 0 === r ? null : canAccess(a + "/bin", c | r);
 }
-
-/* Can this process write its own data directory?
-
-   On the target TV `/var/lib/alcyone` is `drwx------ root root`, so a jailed
-   uid 5033 service answers false. That is a *symptom* of the jail and is
-   reported as its own fact — it is never folded into the elevation decision. */
-function readDataDirWritable(paths) {
-  var dataDir = paths && paths.dataDir;
-  if (!dataDir) return null;
-  var w = accessMode('W_OK', 2);
-  var x = accessMode('X_OK', 1);
-  if (w === undefined || x === undefined) return null;
-  return canAccess(dataDir, w | x);
+function readDataDirWritable(e) {
+  var a = e && e.dataDir;
+  if (!a) return null;
+  var c = accessMode("W_OK", 2),
+    r = accessMode("X_OK", 1);
+  return void 0 === c || void 0 === r ? null : canAccess(a, c | r);
 }
-
-/* Is the TUN device node visible?
-
-   Purely diagnostic: it tells a support reader whether the kernel exposes
-   /dev/net/tun at all, which is a different failure from being un-elevated. */
 function readTunVisible() {
-  var r = accessMode('R_OK', 4);
-  if (r === undefined) return null;
-  return canAccess('/dev/net/tun', r);
+  var e = accessMode("R_OK", 4);
+  return void 0 === e ? null : canAccess("/dev/net/tun", e);
 }
-
-/* A fresh object every call: the cache must never hand out a reference a
-   caller could mutate. */
-function copy(source) {
+function copy(e) {
   return {
-    uid: source.uid,
-    root: source.root,
-    pid: source.pid,
-    appPayloadReadable: source.appPayloadReadable,
-    dataDirWritable: source.dataDirWritable,
-    tunVisible: source.tunVisible
+    uid: e.uid,
+    root: e.root,
+    pid: e.pid,
+    appPayloadReadable: e.appPayloadReadable,
+    dataDirWritable: e.dataDirWritable,
+    tunVisible: e.tunVisible,
   };
 }
-
-function cacheKey(paths) {
-  if (!paths) return '-';
-  return String(paths.appDir || '') + ' ' + String(paths.dataDir || '');
+function cacheKey(e) {
+  return e ? String(e.appDir || "") + " " + String(e.dataDir || "") : "-";
 }
-
-/* `paths` is optional. Without it the filesystem facts stay null (unknown)
-   rather than guessing at a location, and only the process identity is
-   reported. */
-function probe(paths, force) {
-  var now = Date.now();
-  var key = cacheKey(paths);
-  if (!force && cached && key === cachedKey && (now - cachedAt) < CACHE_MS) return copy(cached);
-  cached = {
-    uid: readUid(),
-    root: readRoot(),
-    pid: typeof process.pid === 'number' ? process.pid : -1,
-    appPayloadReadable: readAppPayloadReadable(paths),
-    dataDirWritable: readDataDirWritable(paths),
-    tunVisible: readTunVisible()
-  };
-  cachedAt = now;
-  cachedKey = key;
-  return copy(cached);
+function probe(e, a) {
+  var c = Date.now(),
+    r = cacheKey(e);
+  return (
+    (!a && cached && r === cachedKey && c - cachedAt < CACHE_MS) ||
+      ((cached = {
+        uid: readUid(),
+        root: readRoot(),
+        pid: "number" == typeof process.pid ? process.pid : -1,
+        appPayloadReadable: readAppPayloadReadable(e),
+        dataDirWritable: readDataDirWritable(e),
+        tunVisible: readTunVisible(),
+      }),
+      (cachedAt = c),
+      (cachedKey = r)),
+    copy(cached)
+  );
 }
-
-/* Called after anything that could change the process identity, so the next
-   read crosses the cache window. */
 function invalidate() {
-  cached = null;
-  cachedAt = 0;
-  cachedKey = '';
+  ((cached = null), (cachedAt = 0), (cachedKey = ""));
 }
-
-module.exports = {
-  CACHE_MS: CACHE_MS,
-  probe: probe,
-  invalidate: invalidate
-};
+module.exports = { CACHE_MS: CACHE_MS, probe: probe, invalidate: invalidate };

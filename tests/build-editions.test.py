@@ -19,7 +19,8 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILDER = os.path.join(ROOT, "build_ipk.py")
-VERSION = "4.0.4"
+with open(os.path.join(ROOT, "VERSION"), "r", encoding="utf-8") as version_file:
+    VERSION = version_file.read().strip()
 
 
 def sha256(data):
@@ -69,6 +70,14 @@ def elf_machine(data):
 
 def verify(path, expected):
     payload, ar_members = read_ar(path)
+    raw_names = []
+    offset = 8
+    while offset < len(payload):
+        header = payload[offset : offset + 60]
+        raw_names.append(header[:16].decode("ascii").strip())
+        size = int(header[48:58].decode("ascii").strip())
+        offset += 60 + size + (size % 2)
+    assert raw_names == ["debian-binary", "control.tar.gz", "data.tar.gz"], raw_names
     assert set(ar_members) == {"debian-binary", "control.tar.gz", "data.tar.gz"}
     assert ar_members["debian-binary"] == b"2.0\n"
     control, control_modes = read_tar_members(ar_members["control.tar.gz"])
@@ -122,9 +131,17 @@ def verify(path, expected):
 
     roles_json = json.loads(data[service_prefix + "roles.json"].decode("utf-8"))
     assert roles_json["allowedNames"] == [expected["service_id"]]
-    assert roles_json["permissions"][0]["inbound"] == [expected["app_id"]]
-    assert "*" not in roles_json["permissions"][0]["inbound"]
+    inbound = roles_json["permissions"][0]["inbound"]
+    outbound = roles_json["permissions"][0]["outbound"]
+    assert expected["app_id"] in inbound
+    assert "com.webos.service.activitymanager" in inbound
+    assert "com.webos.service.connectionmanager" in outbound
+    assert "com.palm.connectionmanager" in outbound
+    assert "*" not in inbound and "*" not in outbound
     assert service_prefix + "role.json" in data
+    launcher_path = prefix + "bin/alcyone-exec"
+    assert launcher_path in data
+    assert data_modes[launcher_path] == 0o755
     ca_path = service_prefix + "certs/cacert.pem"
     assert ca_path in data, "current TLS trust bundle missing"
     if os.name != "nt":
@@ -159,11 +176,13 @@ def verify(path, expected):
     if expected["core"] == "xray":
         assert prefix + "bin/xray" in data
         assert prefix + "bin/tun2socks" in data
+        assert prefix + "bin/alcyone-netguard" in data
         assert prefix + "bin/sing-box" not in data
         assert sha256(data[prefix + "bin/xray"]) == "451bfccf7c86f08860296903479d8b92edccc507312b3eb338de33a7cb3dabfb"
         assert sha256(data[prefix + "bin/tun2socks"]) == "b2bbe63f8144ce67a9f8839541428999302b68cd54fbf14f403c73be75cd719a"
-        if os.name != "nt":
-            assert data_modes[prefix + "bin/xray"] == 0o755
+        assert data_modes[prefix + "bin/xray"] == 0o755
+        assert data_modes[prefix + "bin/tun2socks"] == 0o755
+        assert data_modes[prefix + "bin/alcyone-netguard"] == 0o755
         assert sha256(data[prefix + "bin/geosite.dat"]) == "adf92de0cfc70e458b399f04c5f912bf42d115ed7e37281b30e2f1c68605e4e9"
         assert sha256(data[prefix + "bin/geoip.dat"]) == "744c97b74c52bae2ac8664fef6ac481d7765cb8432a0df54f0368a88b9b4a354"
         if os.name != "nt":
@@ -175,8 +194,7 @@ def verify(path, expected):
         assert prefix + "bin/xray" not in data
         assert prefix + "bin/tun2socks" not in data
         assert sha256(data[prefix + "bin/sing-box"]) == "e1db083cfc4fd9c6c93ce75eaeab9f6b59b490fe8258cd28e970ede28412f8e6"
-        if os.name != "nt":
-            assert data_modes[prefix + "bin/sing-box"] == 0o755
+        assert data_modes[prefix + "bin/sing-box"] == 0o755
         natives = ["bin/sing-box"]
 
     # Every bundled native binary must really be 32-bit ARM.
@@ -207,14 +225,57 @@ def main():
         },
     }
     with tempfile.TemporaryDirectory(prefix="alcyone-build-test-") as output_dir:
+        # A local output directory commonly survives a version bump. Its old
+        # manifest must not contaminate the next release candidate.
+        with open(os.path.join(output_dir, "artifacts.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "version": "0.0.0-stale",
+                    "label": "",
+                    "editions": [
+                        {
+                            "edition": "XRay",
+                            "file": "Alcyone-XRay_0.0.0-stale.ipk",
+                            "sha256": "0" * 64,
+                            "size": 1,
+                        }
+                    ],
+                },
+                handle,
+            )
         build(output_dir, "xray")
-        assert os.listdir(output_dir) == [expected["xray"]["artifact"]]
+        assert sorted(os.listdir(output_dir)) == sorted(
+            [expected["xray"]["artifact"], "artifacts.json"]
+        ), (
+            "unexpected xray build output: %r" % (sorted(os.listdir(output_dir)),)
+        )
         xray_path = os.path.join(output_dir, expected["xray"]["artifact"])
         verify(xray_path, expected["xray"])
 
         build(output_dir, "sing-box")
         singbox_path = os.path.join(output_dir, expected["sing-box"]["artifact"])
         verify(singbox_path, expected["sing-box"])
+
+        artifacts = json.loads(
+            open(os.path.join(output_dir, "artifacts.json"), encoding="utf-8").read()
+        )
+        assert artifacts["version"] == VERSION
+        by_file = {item["file"]: item for item in artifacts["editions"]}
+        assert sorted(by_file) == sorted(
+            expected[key]["artifact"] for key in ("xray", "sing-box")
+        ), "artifacts.json retained entries from another version or label"
+        for key in ("xray", "sing-box"):
+            artifact_name = expected[key]["artifact"]
+            assert artifact_name in by_file, "artifacts.json lacks %s" % artifact_name
+            item = by_file[artifact_name]
+            path_for = os.path.join(output_dir, artifact_name)
+            assert item["size"] == os.path.getsize(path_for)
+            import hashlib as _hashlib
+            assert (
+                item["sha256"]
+                == _hashlib.sha256(open(path_for, "rb").read()).hexdigest()
+            )
+        print("artifacts manifest matches the built IPKs byte-for-byte")
 
     print("independent edition build tests passed")
 

@@ -17,13 +17,15 @@ import struct
 import subprocess
 import tarfile
 import tempfile
+import pathlib
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(ROOT, "app")
 SERVICE = os.path.join(APP, "service")
 CORES = os.environ.get("ALCYONE_CORES_DIR", os.path.join(ROOT, "build", "cores"))
-VERSION = "4.0.4"
+VERSION_FILE = os.path.join(ROOT, "VERSION")
+VERSION = open(VERSION_FILE, "r", encoding="utf-8").read().strip() if os.path.exists(VERSION_FILE) else "4.2.2"
 SOURCE_DATE_EPOCH = 1700000000
 
 ELF_MACHINES = {
@@ -48,8 +50,10 @@ EDITIONS = {
         "title": "Alcyone XRay",
         "web_port": 8080,
         "binaries": {
+            "bin/alcyone-exec": os.path.join(CORES, "launcher", "alcyone-exec"),
             "bin/xray": os.path.join(CORES, "xray", "xray"),
             "bin/tun2socks": os.path.join(CORES, "tun2socks", "tun2socks"),
+            "bin/alcyone-netguard": os.path.join(CORES, "netguard", "alcyone-netguard"),
         },
         "assets": {
             "bin/geosite.dat": os.path.join(CORES, "xray", "geosite.dat"),
@@ -70,11 +74,15 @@ EDITIONS = {
         "title": "Alcyone sing-box",
         "web_port": 8081,
         "binaries": {
+            "bin/alcyone-exec": os.path.join(CORES, "launcher", "alcyone-exec"),
             "bin/sing-box": os.path.join(CORES, "sing-box", "sing-box"),
         },
         "assets": {},
     },
 }
+
+
+DATA_PLANE = "tun2socks"
 
 
 def read(path):
@@ -157,6 +165,7 @@ def edition_js(edition):
         "editionName": edition["edition_name"],
         "title": edition["title"],
         "version": VERSION,
+        "dataPlane": DATA_PLANE,
     }
     return ("window.ALCYONE_EDITION = " + json.dumps(config, ensure_ascii=False, separators=(",", ":")) + ";\n").encode("utf-8")
 
@@ -174,6 +183,7 @@ def edition_json(edition):
         "dataDir": edition["data_dir"],
         "autostartName": edition["autostart"],
         "webPort": edition["web_port"],
+        "dataPlane": DATA_PLANE,
     })
 
 
@@ -184,8 +194,19 @@ def service_roles(edition):
         "allowedNames": [edition["service_id"]],
         "permissions": [{
             "service": edition["service_id"],
-            "inbound": [edition["app_id"]],
-            "outbound": ["com.webos.service.activitymanager"],
+            "inbound": [
+                edition["app_id"],
+                "com.webos.service.activitymanager",
+                "com.palm.activitymanager",
+            ],
+            "outbound": [
+                "com.webos.service.activitymanager",
+                "com.palm.activitymanager",
+                "com.webos.service.connectionmanager",
+                "com.palm.connectionmanager",
+                "com.webos.service.systemservice",
+                "com.palm.systemservice",
+            ],
         }],
     })
 
@@ -304,6 +325,81 @@ def control_metadata(path):
     return metadata, text
 
 
+def replace_ar_member(path, target_name, replacement):
+    """Replace one ar payload without rewriting official member headers."""
+    original = read(path)
+    if not original.startswith(b"!<arch>\n"):
+        raise SystemExit("ares-package output has invalid ar magic: " + path)
+    output = bytearray(original[:8])
+    offset = 8
+    replaced = False
+    while offset < len(original):
+        header = bytearray(original[offset:offset + 60])
+        if len(header) != 60 or header[58:60] != b"`\n":
+            raise SystemExit("ares-package output has an invalid ar member header")
+        name = header[:16].decode("ascii").strip().rstrip("/")
+        size = int(header[48:58].decode("ascii").strip())
+        offset += 60
+        payload = original[offset:offset + size]
+        offset += size + (size % 2)
+        if name == target_name:
+            payload = replacement
+            header[48:58] = str(len(payload)).encode("ascii").ljust(10, b" ")
+            replaced = True
+        output.extend(header)
+        output.extend(payload)
+        if len(payload) % 2:
+            output.extend(b"\n")
+    if not replaced:
+        raise SystemExit("IPK is missing %s for replacement" % target_name)
+    write(path, bytes(output), 0o644)
+
+
+def normalize_ipk_modes(path, executable_names):
+    """Normalize native executable modes in the final IPK.
+
+    The Windows ares-package path can lose POSIX execute bits even when the
+    staging tree and package.properties are correct. webOS executes the
+    final tar mode, so repair only the declared native binaries and preserve
+    every other official archive member byte-for-byte."""
+    members = read_ar(path)
+    data_raw = members.get("data.tar.gz")
+    if data_raw is None:
+        raise SystemExit("IPK is missing data.tar.gz for mode normalization")
+    source = tarfile.open(fileobj=io.BytesIO(gzip.decompress(data_raw)), mode="r:")
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w:", format=tarfile.PAX_FORMAT) as target:
+        for member in source.getmembers():
+            clean = member.name.lstrip("./")
+            if clean.startswith("usr/palm/applications/") and "/bin/" in clean:
+                basename = clean.rsplit("/", 1)[-1]
+                if basename in executable_names:
+                    member.mode = 0o755
+            extracted = source.extractfile(member) if member.isfile() else None
+            target.addfile(member, extracted)
+            if extracted is not None:
+                extracted.close()
+    compressed = gzip.compress(output.getvalue(), mtime=0)
+    # webOS verifies the canonical ares-package ar member names and header
+    # layout. Preserve every official header byte (including names without
+    # a trailing slash) and change only the data member size and payload.
+    replace_ar_member(path, "data.tar.gz", compressed)
+
+
+def verify_payload_modes(path, executable_names):
+    members = read_ar(path)
+    source = tarfile.open(fileobj=io.BytesIO(gzip.decompress(members["data.tar.gz"])), mode="r:")
+    modes = {}
+    for member in source.getmembers():
+        clean = member.name.lstrip("./")
+        if clean.rsplit("/", 1)[-1] in executable_names:
+            modes[clean] = member.mode & 0o777
+    missing = [name for name in executable_names if not any(k.endswith("/" + name) for k in modes)]
+    bad = [key for key, mode in modes.items() if mode != 0o755]
+    if missing or bad:
+        raise SystemExit("IPK executable mode guard failed: missing=%s bad=%s" % (missing, bad))
+
+
 def verify_official_metadata(path, edition):
     metadata, text = control_metadata(path)
     required = ("Installed-Size", "webOS-Package-Format-Version", "webOS-Packager-Version")
@@ -342,6 +438,9 @@ def build_edition(name, output_dir, ares_package, label=""):
         if len(candidates) != 1:
             raise SystemExit("ares-package produced %d IPKs; expected exactly one" % len(candidates))
         verify_official_metadata(candidates[0], edition)
+        executable_names = [os.path.basename(path) for path in edition["binaries"]]
+        normalize_ipk_modes(candidates[0], executable_names)
+        verify_payload_modes(candidates[0], executable_names)
         output_path = os.path.join(output_dir, edition["artifact"] % (VERSION + label))
         if os.path.exists(output_path):
             os.remove(output_path)
@@ -355,19 +454,83 @@ def build_edition(name, output_dir, ares_package, label=""):
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--edition", choices=("all", "xray", "sing-box"), default="all")
-    parser.add_argument("--output-dir", default=os.path.join(ROOT, "release-assets"))
+    parser.add_argument(
+        "--data-plane",
+        choices=("tun2socks", "native-tun"),
+        default="tun2socks",
+        help="XRay data plane baked into the edition descriptor",
+    )
+    parser.add_argument(
+        "--output-dir",
+        # Shipping artifacts live in release-assets/ and are pinned by the
+        # feed metadata; local builds must not overwrite them by accident
+        # (audit 2026-08 finding). Pass --output-dir release-assets only
+        # for an intentional, reviewed release rebuild.
+        default=os.path.join(ROOT, "build", "dist"),
+        help="directory for built IPKs (default: build/dist)",
+    )
     parser.add_argument("--label", default="", help="filename-only suffix for an unpublished candidate")
     parser.add_argument("--ares-package", help="path to the official ares-package executable")
     return parser.parse_args()
 
 
+def write_artifacts_manifest(output_dir, names, label):
+    """Emit build/dist/artifacts.json describing every IPK of this run.
+
+    Repeated invocations (one edition at a time) MERGE by file name, so
+    a full two-edition release ends up with both entries. Feed hashes
+    must come from real bytes; tools/release-metadata.py sync consumes
+    this."""
+    import datetime
+
+    target = pathlib.Path(output_dir) / "artifacts.json"
+    suffix = ("_" + label) if label else ""
+    pattern = re.compile(
+        r"^Alcyone-(?P<edition>.+?)_%s%s\.ipk$"
+        % (re.escape(VERSION), re.escape(suffix))
+    )
+    existing = {}
+    if target.is_file():
+        try:
+            prior = json.loads(target.read_text(encoding="utf-8"))
+            if prior.get("version") == VERSION and prior.get("label", "") == label:
+                for item in prior.get("editions", []):
+                    if pattern.match(item["file"]):
+                        existing[item["file"]] = item
+        except (ValueError, OSError, KeyError):
+            existing = {}
+    for path in sorted(pathlib.Path(output_dir).glob("Alcyone-*")):
+        match = pattern.match(path.name)
+        if not match:
+            continue
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        existing[path.name] = {
+            "edition": match.group("edition"),
+            "file": path.name,
+            "sha256": digest,
+            "size": path.stat().st_size,
+        }
+    manifest = {
+        "version": VERSION,
+        "label": label,
+        "generatedAt": datetime.datetime.utcnow().isoformat() + "Z",
+        "editions": [existing[key] for key in sorted(existing)],
+    }
+    target.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print("wrote %s (%d edition(s))" % (target, len(manifest["editions"])))
+
+
 def main():
+    global DATA_PLANE
     args = parse_args()
+    DATA_PLANE = args.data_plane
     executable = find_ares_package(args.ares_package)
     label = re.sub(r"[^A-Za-z0-9._-]", "", args.label)
     names = ("xray", "sing-box") if args.edition == "all" else (args.edition,)
+    output_dir = os.path.abspath(args.output_dir)
     for name in names:
-        build_edition(name, os.path.abspath(args.output_dir), executable, label)
+        build_edition(name, output_dir, executable, label)
+    write_artifacts_manifest(output_dir, names, label)
 
 
 if __name__ == "__main__":

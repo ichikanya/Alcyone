@@ -4,19 +4,17 @@ This project is optimized for AI agent pairing (Codex, Claude, Antigravity, Curs
 
 ---
 
-## 1. Fast Knowledge Graph Navigation (Graphify)
+## 1. Fast Codebase Navigation (Repowise)
 
-A zero-token-cost Knowledge Graph AST is maintained in `graphify-out/`.
+Repowise maintains a local codebase index at workspace root with the dependency graph,
+generated docs, git history, architectural decisions, and code-health data.
 
-### Token-Saving Navigation Rules:
-- **Never read raw `graphify-out/graph.json`**: It is a large JSON payload that wastes context window tokens.
-- **Use Graphify CLI for targeted subgraphs**:
-  - `graphify query "<search term>"` — Find specific components or functions.
-  - `graphify path "<nodeA>" "<nodeB>"` — Trace data/request flow between modules.
-  - `graphify explain "<module/concept>"` — Get scoped architectural explanations.
-  - `graphify god-nodes --top 5` — Inspect key hub modules.
-- **Overview**: Read `graphify-out/GRAPH_REPORT.md` ONLY for broad architectural context.
-- **Zero API-Cost Graph Update**: After modifying code, run `graphify update .` to keep the graph current.
+### Navigation Rules:
+- **Start broad**: Use the Repowise MCP tool `get_overview` for architectural context.
+- **Use targeted tools**: `get_context` for files/symbols, `get_answer` or `search_codebase` for questions, and `get_risk` for change impact.
+- **Maintenance checks**: Use `get_health` and `get_dead_code` when reviewing technical debt or cleanup.
+- **CLI fallback**: `repowise search "<search term>"`, `repowise health`, and `repowise risk main..HEAD`.
+- **Incremental update**: After modifying code, run `repowise update .` from workspace root.
 
 ---
 
@@ -47,7 +45,7 @@ A zero-token-cost Knowledge Graph AST is maintained in `graphify-out/`.
   ```bash
   python build_ipk.py
   ```
-- **Update Knowledge Graph (0 API Token Cost)**:
+- **Update Repowise index (local, no API key required)**:
   ```bash
-  graphify update .
+  repowise update .
   ```

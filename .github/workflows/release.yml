@@ -28,6 +28,19 @@ jobs:
         with:
           go-version: "1.26.1"
           cache: false
+      - name: Install pinned Zig
+        shell: bash
+        run: |
+          zig_version="0.16.0"
+          zig_archive="${RUNNER_TEMP}/zig-${zig_version}.tar.xz"
+          zig_dir="${RUNNER_TEMP}/zig-x86_64-linux-${zig_version}"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${zig_archive}" \
+            "https://ziglang.org/download/${zig_version}/zig-x86_64-linux-${zig_version}.tar.xz"
+          echo "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  ${zig_archive}" | sha256sum -c -
+          tar -xJf "${zig_archive}" -C "${RUNNER_TEMP}"
+          test "$("${zig_dir}/zig" version)" = "${zig_version}"
+          echo "${zig_dir}" >> "${GITHUB_PATH}"
       - name: Install official webOS packager
         run: npm ci
       - name: Build and verify pinned ARM cores
@@ -35,7 +48,7 @@ jobs:
           bash tools/build-cores.sh
           python tests/binary-provenance.test.py
       - name: Build official verification IPKs
-        run: python build_ipk.py --edition all --output-dir release-assets
+        run: python build_ipk.py --edition all --output-dir build/verification-ipks
       - name: Syntax checks
         run: |
           node --check app/app.js

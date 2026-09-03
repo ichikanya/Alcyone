@@ -1,445 +1,630 @@
-'use strict';
-
-/* TUN interface and routing manager.
-
-   All network changes run through `/sbin/ip` (or `/usr/sbin/ip`) invoked with
-   an argument array and no shell. Before touching anything we snapshot the
-   original default route and persist it, so a crash, a failed start or a
-   service restart can always restore the TV's connectivity.
-
-   Rollback is idempotent: it may be called twice, or after a partial start,
-   without producing errors. That is what keeps a failed VPN attempt from
-   leaving the TV offline. */
-
-var childProcess = require('child_process');
-var fs = require('fs');
-var atomic = require('../atomic');
-var errors = require('../errors');
-var err = errors.err;
-
-var IP_CANDIDATES = ['/sbin/ip', '/usr/sbin/ip', '/bin/ip', '/usr/bin/ip'];
-
-var TUN_NAME = 'tun0';
-var TUN_IP = '198.18.0.1';
-var TUN_GW = '198.18.0.2';
-var TUN_MASK = '30';
-var SPLIT_ROUTES = ['0.0.0.0/1', '128.0.0.0/1'];
-var IPV6_BLOCK_ROUTES = ['::/1', '8000::/1'];
-/* XRay sends these destinations through its freedom/direct outbound. They
-   must therefore stay on the pre-VPN interface at the kernel layer too.
-   Otherwise the split default captures the direct packet back into tun0,
-   causing a recursive tun2socks -> SOCKS -> XRay -> tun0 loop.
-
-   Loopback remains owned by the kernel's local table and IPv6 is deliberately
-   blocked below because this product does not configure an IPv6 TUN address. */
-var DIRECT_BYPASS_ROUTES = [
-  /* `ip route get` rejects 0/8 destinations on older kernels even when the
-     route is installed, so this reserved range is verified by exact listing. */
-  { prefix: '0.0.0.0/8', probe: '', gateway: true },
-  { prefix: '10.0.0.0/8', probe: '10.1.2.3', gateway: true },
-  { prefix: '100.64.0.0/10', probe: '100.64.1.2', gateway: true },
-  { prefix: '169.254.0.0/16', probe: '169.254.1.2', gateway: false },
-  { prefix: '172.16.0.0/12', probe: '172.16.1.2', gateway: true },
-  { prefix: '192.168.0.0/16', probe: '192.168.1.2', gateway: true },
-  { prefix: '224.0.0.0/4', probe: '239.255.255.250', gateway: false },
-  { prefix: '240.0.0.0/4', probe: '240.0.0.1', gateway: false }
-];
-
+"use strict";
+var childProcess = require("child_process"),
+  fs = require("fs"),
+  path = require("path"),
+  atomic = require("../atomic"),
+  guardianLib = require("./guardian-client"),
+  mtuPolicyLib = require("../mtu-policy"),
+  policyLib = require("./policy-routes"),
+  errors = require("../errors"),
+  err = errors.err,
+  IP_CANDIDATES = ["/sbin/ip", "/usr/sbin/ip", "/bin/ip", "/usr/bin/ip"],
+  TUN_NAME = "tun0",
+  TUN_NAMES = { xray: "alx0", "sing-box": "als0" },
+  TUN_IP = "198.18.0.1",
+  TUN_GW = "198.18.0.2",
+  TUN_MASK = "30",
+  SPLIT_ROUTES = ["0.0.0.0/1", "128.0.0.0/1"],
+  IPV6_BLOCK_ROUTES = ["::/1", "8000::/1"],
+  DIRECT_BYPASS_ROUTES = [
+    { prefix: "0.0.0.0/8", probe: "", gateway: !0 },
+    { prefix: "10.0.0.0/8", probe: "10.1.2.3", gateway: !0 },
+    { prefix: "100.64.0.0/10", probe: "100.64.1.2", gateway: !0 },
+    { prefix: "169.254.0.0/16", probe: "169.254.1.2", gateway: !1 },
+    { prefix: "172.16.0.0/12", probe: "172.16.1.2", gateway: !0 },
+    { prefix: "192.168.0.0/16", probe: "192.168.1.2", gateway: !0 },
+    { prefix: "224.0.0.0/4", probe: "239.255.255.250", gateway: !1 },
+    { prefix: "240.0.0.0/4", probe: "240.0.0.1", gateway: !1 },
+  ];
 function findIpBinary() {
-  var supervisor = require('../supervisor');
-  return supervisor.resolveExecutable(IP_CANDIDATES);
+  return require("../supervisor").resolveExecutable(IP_CANDIDATES);
 }
-
-function RouteManager(options) {
-  options = options || {};
-  this.logger = options.logger;
-  this.core = options.core === 'sing-box' ? 'sing-box' : 'xray';
-  this.stateFile = options.stateFile;
-  this.ipBinary = options.ipBinary || findIpBinary();
-  this.procRouteFile = options.procRouteFile || '/proc/net/route';
-  this.applied = false;
+/* Edition-specific TUN interface names: one edition must never be able
+   to tear down the other edition's device, so the shared "tun0" is gone.
+   tunNameFor keeps a mapping for callers that only know the core id. */
+function tunNameFor(e) {
+  return TUN_NAMES[e] || TUN_NAME;
 }
-
-/* Run `ip` with a fixed argv. Returns {code, stdout}; never throws for a
-   non-zero exit so cleanup can ignore "route already gone" cases. */
-RouteManager.prototype.ip = function (args) {
-  var result;
-  if (!this.ipBinary) return { code: -1, stdout: '', missing: true };
-  result = childProcess.spawnSync(this.ipBinary, args, {
-    shell: false,
-    encoding: 'utf8',
-    timeout: 5000,
-    env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin' }
+function RouteManager(e) {
+  ((e = e || {}),
+    (this.logger = e.logger),
+    (this.core = "sing-box" === e.core ? "sing-box" : "xray"),
+    (this.stateFile = e.stateFile),
+    (this.ipBinary = e.ipBinary || findIpBinary()),
+    (this.procRouteFile = e.procRouteFile || "/proc/net/route"),
+    (this.tunName = e.tunName || tunNameFor(this.core)),
+    (this.applied = !1));
+  this.guardian =
+    e.guardian ||
+    (e.stateFile
+      ? new guardianLib.GuardianClient({
+          logger: this.logger,
+          leaseFile: path.join(
+            path.dirname(e.stateFile),
+            "netguard-" + this.core + ".lease"
+          ),
+          flagFile: e.netguardFlagFile,
+          searchDirs: e.netguardDirs,
+        })
+      : null);
+  this.policy = new policyLib.PolicyRoutes({
+    ip: this.ip.bind(this),
+    persist: this.persistState.bind(this),
+    logger: this.logger,
+    core: this.core,
+    tunName: this.tunName,
+    tunIp: TUN_IP,
+    tunGw: TUN_GW,
   });
-  return {
-    code: typeof result.status === 'number' ? result.status : -1,
-    stdout: String(result.stdout || ''),
-    stderr: String(result.stderr || '')
-  };
-};
-
-RouteManager.prototype.available = function () { return !!this.ipBinary; };
-
-/* Read the current default route so we can restore it verbatim later. */
-RouteManager.prototype.readDefaultRoute = function () {
-  var out = this.ip(['route', 'show', 'default']);
-  var lines = out.stdout.split('\n');
-  var i, line, gwMatch, devMatch;
-  for (i = 0; i < lines.length; i++) {
-    line = lines[i];
-    if (!line || line.indexOf(TUN_NAME) >= 0) continue;
-    gwMatch = /\bvia\s+(\S+)/.exec(line);
-    devMatch = /\bdev\s+(\S+)/.exec(line);
-    if (devMatch) {
-      return { gateway: gwMatch ? gwMatch[1] : '', device: devMatch[1], raw: line.trim() };
-    }
-  }
-  return this.readProcDefaultRoute();
-};
-
-function routeIdentity(route) {
-  if (!route || !route.device) return '';
-  return String(route.device) + '|' + String(route.gateway || '');
 }
-
-/* Read-only detection for a physical interface or gateway transition. */
-RouteManager.prototype.networkChanged = function (state) {
-  var original, current;
-  state = state || this.loadState();
-  original = state && state.original;
-  if (!original || !original.device) return false;
-  current = this.readDefaultRoute();
-  return !current || routeIdentity(current) !== routeIdentity(original);
-};
-
-function decodeProcIpv4(value) {
-  var out = [];
-  var i;
-  if (!/^[0-9A-Fa-f]{8}$/.test(String(value || ''))) return '';
-  for (i = 6; i >= 0; i -= 2) out.push(parseInt(value.substr(i, 2), 16));
-  return out.join('.');
+function routeIdentity(e) {
+  return e && e.device ? String(e.device) + "|" + String(e.gateway || "") : "";
 }
-
-/* `/proc/net/route` is the kernel-owned fallback when this low-resource
-   runtime transiently fails to spawn `ip`. It is read-only and contains the
-   same physical default facts needed for endpoint/direct bypass and rollback. */
-RouteManager.prototype.readProcDefaultRoute = function () {
-  var text, lines, i, fields, gateway, raw;
-  try {
-    text = fs.readFileSync(this.procRouteFile, 'utf8');
-  } catch (readError) {
-    return null;
-  }
-  lines = text.split('\n');
-  for (i = 1; i < lines.length; i++) {
-    fields = lines[i].trim().split(/\s+/);
-    if (fields.length < 8 || fields[0] === TUN_NAME ||
-        fields[1] !== '00000000' || fields[7] !== '00000000' ||
-        (parseInt(fields[3], 16) & 1) === 0) continue;
-    gateway = decodeProcIpv4(fields[2]);
-    raw = 'default' + (gateway && gateway !== '0.0.0.0' ? ' via ' + gateway : '') +
-      ' dev ' + fields[0];
-    return {
-      gateway: gateway === '0.0.0.0' ? '' : gateway,
-      device: fields[0],
-      raw: raw
+function decodeProcIpv4(e) {
+  var t,
+    r = [];
+  if (!/^[0-9A-Fa-f]{8}$/.test(String(e || ""))) return "";
+  for (t = 6; t >= 0; t -= 2) r.push(parseInt(e.substr(t, 2), 16));
+  return r.join(".");
+}
+((RouteManager.prototype.ip = function (e) {
+  var t;
+  return this.ipBinary
+    ? {
+        code:
+          "number" ==
+          typeof (t = childProcess.spawnSync(this.ipBinary, e, {
+            shell: !1,
+            encoding: "utf8",
+            timeout: 5e3,
+            env: { PATH: "/usr/sbin:/usr/bin:/sbin:/bin" },
+          })).status
+            ? t.status
+            : -1,
+        stdout: String(t.stdout || ""),
+        stderr: String(t.stderr || ""),
+      }
+    : { code: -1, stdout: "", missing: !0 };
+}),
+  (RouteManager.prototype.persistState = function (state) {
+    atomic.writeJsonAtomic(this.stateFile, state);
+  }),
+  (RouteManager.prototype.available = function () {
+    return !!this.ipBinary;
+  }),
+  (RouteManager.prototype.armGuardian = function (e) {
+    var t;
+    if (!this.guardian || !this.guardian.enabled) return !0;
+    if (!e) return !0;
+    t = {
+      edition: this.core,
+      tunIf: this.tunName,
+      v6Block: IPV6_BLOCK_ROUTES.slice(),
+      splitV4:
+        "policy" === e.routingBackend && e.policy ? [] : SPLIT_ROUTES.slice(),
     };
-  }
-  return null;
-};
-
-RouteManager.prototype.readHostRoute = function (address) {
-  var out = this.ip(['route', 'show', 'exact', address]);
-  var lines = out.stdout.split('\n');
-  var i, line;
-  for (i = 0; i < lines.length; i++) {
-    line = lines[i].trim();
-    if (line && line.indexOf(TUN_NAME) < 0) return line;
-  }
-  return '';
-};
-
-RouteManager.prototype.readIpv4Route = function (prefix) {
-  var out = this.ip(['route', 'show', 'exact', prefix]);
-  var lines = out.stdout.split('\n');
-  var i, line;
-  for (i = 0; i < lines.length; i++) {
-    line = lines[i].trim();
-    if (line) return line;
-  }
-  return '';
-};
-
-RouteManager.prototype.readIpv6Route = function (prefix) {
-  var out = this.ip(['-6', 'route', 'show', 'exact', prefix]);
-  var lines = out.stdout.split('\n');
-  var i, line;
-  for (i = 0; i < lines.length; i++) {
-    line = lines[i].trim();
-    if (line) return line;
-  }
-  return '';
-};
-
-/* Persist the pre-VPN state plus the server addresses we bypass, so a fresh
-   service process after a crash can roll back correctly. */
-RouteManager.prototype.saveState = function (serverAddresses) {
-  var original = this.readDefaultRoute();
-  var serverRoutes = {};
-  var directRoutes = {};
-  var ipv6Routes = {};
-  var i, address, previous, route;
-  if (!original || !original.device) {
-    throw err('ROUTE_FAILED', 'physical default route unavailable');
-  }
-  serverAddresses = serverAddresses || [];
-  for (i = 0; i < serverAddresses.length; i++) {
-    address = serverAddresses[i];
-    previous = this.readHostRoute(address);
-    if (previous) serverRoutes[address] = previous;
-  }
-  for (i = 0; i < IPV6_BLOCK_ROUTES.length; i++) {
-    previous = this.readIpv6Route(IPV6_BLOCK_ROUTES[i]);
-    if (previous) ipv6Routes[IPV6_BLOCK_ROUTES[i]] = previous;
-  }
-  for (i = 0; i < DIRECT_BYPASS_ROUTES.length; i++) {
-    route = DIRECT_BYPASS_ROUTES[i];
-    previous = this.readIpv4Route(route.prefix);
-    if (previous) directRoutes[route.prefix] = previous;
-  }
-  var state = {
-    original: original,
-    serverAddresses: serverAddresses,
-    serverRoutes: serverRoutes,
-    directRoutes: directRoutes,
-    ipv6Routes: ipv6Routes,
-    core: this.core,
-    savedAt: Date.now()
-  };
-  atomic.writeJsonAtomic(this.stateFile, state);
-  return state;
-};
-
-RouteManager.prototype.loadState = function () {
-  return atomic.readJson(this.stateFile, null);
-};
-
-RouteManager.prototype.tunExists = function () {
-  return this.ip(['link', 'show', TUN_NAME]).code === 0;
-};
-
-/* Keep traffic to the VPN server itself off the tunnel, or the tunnel would
-   route its own transport back into itself. */
-RouteManager.prototype.addServerBypass = function (address, original) {
-  if (!address || !original) return;
-  if (original.gateway) {
-    this.ip(['route', 'replace', address, 'via', original.gateway, 'dev', original.device]);
-  } else {
-    this.ip(['route', 'replace', address, 'dev', original.device]);
-  }
-};
-
-RouteManager.prototype.removeServerBypass = function (address, original, previousRoute) {
-  if (!address) return;
-  if (original && original.gateway) {
-    this.ip(['route', 'del', address, 'via', original.gateway, 'dev', original.device]);
-  }
-  this.ip(['route', 'del', address]);
-  if (previousRoute) {
-    this.ip(['route', 'replace'].concat(String(previousRoute).split(/\s+/)));
-  }
-};
-
-RouteManager.prototype.installDirectBypasses = function (state) {
-  var original = state && state.original;
-  var i, route, result, args;
-  if (!original || !original.device) {
-    throw err('ROUTE_FAILED', 'physical default route unavailable');
-  }
-  for (i = 0; i < DIRECT_BYPASS_ROUTES.length; i++) {
-    route = DIRECT_BYPASS_ROUTES[i];
-    args = ['route', 'replace', route.prefix];
-    if (route.gateway && original.gateway) args = args.concat(['via', original.gateway]);
-    args = args.concat(['dev', original.device]);
-    result = this.ip(args);
-    if (result.code !== 0) {
-      if (this.logger) this.logger.warn('direct route install failed', {
-        prefix: route.prefix,
-        status: result.code
-      });
-      throw err('ROUTE_FAILED', 'direct route install failed');
+    "policy" === e.routingBackend &&
+      e.policy &&
+      e.policy.table &&
+      ((t.rulePref = e.policy.tunnelPriority),
+      (t.ruleTable = e.policy.table),
+      (t.v6Rule = !!e.policy.ipv6RuleApplied));
+    /* Rearm is a full disarm+arm: the C guardian reads its lease once. */
+    this.guardian.status().armed && this.guardian.disarm();
+    /* When the netguard feature is enabled, a failed arm ABORTS the
+       takeover: connecting without an independent fail-open is exactly
+       the failure mode this stage exists to remove. */
+    try {
+      this.guardian.arm(t);
+    } catch (armError) {
+      throw err(
+        "GUARDIAN_UNAVAILABLE",
+        armError && armError.code ? armError.code : "arm failed"
+      );
     }
-  }
-};
-
-RouteManager.prototype.directRoutesActive = function (state) {
-  var original = state && state.original;
-  var i, out, devMatch, route;
-  if (!original || !original.device) return false;
-  for (i = 0; i < DIRECT_BYPASS_ROUTES.length; i++) {
-    route = DIRECT_BYPASS_ROUTES[i];
-    out = route.probe
-      ? this.ip(['route', 'get', route.probe])
-      : this.ip(['route', 'show', 'exact', route.prefix]);
-    devMatch = /\bdev\s+(\S+)/.exec(out.stdout);
-    if (out.code !== 0 || !devMatch || devMatch[1] !== original.device ||
-        out.stdout.indexOf(TUN_NAME) >= 0 || out.stdout.indexOf(TUN_GW) >= 0) {
-      if (this.logger) this.logger.warn('direct route verification failed', {
-        prefix: route.prefix,
-        status: out.code
-      });
-      return false;
+    return !0;
+  }),
+  (RouteManager.prototype.disarmGuardian = function () {
+    return (
+      !this.guardian ||
+      !this.guardian.enabled ||
+      (this.guardian.stopHeartbeat(), !0)
+    );
+  }),
+  (RouteManager.prototype.readDefaultRoute = function () {
+    var e,
+      t,
+      r,
+      i,
+      o = this.ip(["route", "show", "default"]).stdout.split("\n");
+    for (e = 0; e < o.length; e++)
+      if (
+        (t = o[e]) &&
+        !(t.indexOf(this.tunName) >= 0) &&
+        ((r = /\bvia\s+(\S+)/.exec(t)), (i = /\bdev\s+(\S+)/.exec(t)))
+      )
+        return { gateway: r ? r[1] : "", device: i[1], raw: t.trim() };
+    return this.readProcDefaultRoute();
+  }),
+  (RouteManager.prototype.networkChanged = function (e) {
+    var t, r;
+    return (
+      !(!(t = (e = e || this.loadState()) && e.original) || !t.device) &&
+      (!(r = this.readDefaultRoute()) || routeIdentity(r) !== routeIdentity(t))
+    );
+  }),
+  (RouteManager.prototype.readProcDefaultRoute = function () {
+    var e, t, r, i, o, a;
+    try {
+      e = fs.readFileSync(this.procRouteFile, "utf8");
+    } catch (e) {
+      return null;
     }
-  }
-  return true;
-};
-
-/* Install the split-default routes that send all traffic into the tunnel. */
-RouteManager.prototype.applyTunRoutes = function (state) {
-  var original = state && state.original;
-  var addresses = (state && state.serverAddresses) || [];
-  var i;
-
-  if (!this.available()) throw err('ROUTE_FAILED', 'ip binary unavailable');
-
-  for (i = 0; i < SPLIT_ROUTES.length; i++) this.ip(['route', 'del', SPLIT_ROUTES[i]]);
-  for (i = 0; i < IPV6_BLOCK_ROUTES.length; i++) {
-    /* Neither edition configures an IPv6 TUN address. Block it while the VPN
-       is active instead of silently leaking it through the physical link. */
-    this.ip(['-6', 'route', 'replace', 'unreachable', IPV6_BLOCK_ROUTES[i], 'metric', '42760']);
-  }
-
-  if (this.core === 'sing-box') {
-    /* sing-box creates and addresses tun0 itself; only add what is missing. */
-    this.ip(['addr', 'add', TUN_IP + '/' + TUN_MASK, 'dev', TUN_NAME]);
-  } else {
-    this.ip(['addr', 'add', TUN_IP + '/' + TUN_MASK, 'peer', TUN_GW, 'dev', TUN_NAME]);
-  }
-  this.ip(['link', 'set', TUN_NAME, 'up']);
-
-  for (i = 0; i < addresses.length; i++) this.addServerBypass(addresses[i], original);
-  this.installDirectBypasses(state);
-
-  for (i = 0; i < SPLIT_ROUTES.length; i++) {
-    if (this.core === 'sing-box') {
-      this.ip(['route', 'replace', SPLIT_ROUTES[i], 'dev', TUN_NAME]);
-    } else {
-      this.ip(['route', 'replace', SPLIT_ROUTES[i], 'via', TUN_GW, 'dev', TUN_NAME]);
+    for (t = e.split("\n"), r = 1; r < t.length; r++)
+      if (!(
+        (i = t[r].trim().split(/\s+/)).length < 8 ||
+        i[0] === this.tunName ||
+        "00000000" !== i[1] ||
+        "00000000" !== i[7] ||
+        0 == (1 & parseInt(i[3], 16))
+      ))
+        return (
+          (a =
+            "default" +
+            ((o = decodeProcIpv4(i[2])) && "0.0.0.0" !== o ? " via " + o : "") +
+            " dev " +
+            i[0]),
+          { gateway: "0.0.0.0" === o ? "" : o, device: i[0], raw: a }
+        );
+    return null;
+  }),
+  (RouteManager.prototype.readHostRoute = function (e) {
+    var t,
+      r,
+      i = this.ip(["route", "show", "exact", e]).stdout.split("\n");
+    for (t = 0; t < i.length; t++)
+      if ((r = i[t].trim()) && r.indexOf(this.tunName) < 0) return r;
+    return "";
+  }),
+  (RouteManager.prototype.readIpv4Route = function (e) {
+    var t,
+      r,
+      i = this.ip(["route", "show", "exact", e]).stdout.split("\n");
+    for (t = 0; t < i.length; t++) if ((r = i[t].trim())) return r;
+    return "";
+  }),
+  (RouteManager.prototype.readIpv6Route = function (e) {
+    var t,
+      r,
+      i = this.ip(["-6", "route", "show", "exact", e]).stdout.split("\n");
+    for (t = 0; t < i.length; t++) if ((r = i[t].trim())) return r;
+    return "";
+  }),
+  (RouteManager.prototype.saveState = function (e) {
+    var t,
+      r,
+      i,
+      o,
+      a = this.readDefaultRoute(),
+      s = {},
+      n = {},
+      u = {};
+    if (!a || !a.device)
+      throw err("ROUTE_FAILED", "physical default route unavailable");
+    for (e = e || [], t = 0; t < e.length; t++)
+      ((r = e[t]), (i = this.readHostRoute(r)) && (s[r] = i));
+    for (t = 0; t < IPV6_BLOCK_ROUTES.length; t++)
+      (i = this.readIpv6Route(IPV6_BLOCK_ROUTES[t])) &&
+        (u[IPV6_BLOCK_ROUTES[t]] = i);
+    for (t = 0; t < DIRECT_BYPASS_ROUTES.length; t++)
+      ((o = DIRECT_BYPASS_ROUTES[t]),
+        (i = this.readIpv4Route(o.prefix)) && (n[o.prefix] = i));
+    var p = {
+      schemaVersion: 2,
+      routingBackend: "policy",
+      original: a,
+      serverAddresses: e,
+      serverRoutes: s,
+      directRoutes: n,
+      ipv6Routes: u,
+      core: this.core,
+      savedAt: Date.now(),
+    };
+    try {
+      this.policy.prepare(p);
+    } catch (policyError) {
+      p.routingBackend = "legacy";
+      p.policy = null;
+      this.logger &&
+        this.logger.warn("policy routing unavailable, using legacy backend", {
+          code: policyError.code || "ROUTE_FAILED",
+        });
     }
-  }
-  this.ip(['route', 'flush', 'cache']);
-  if (!this.directRoutesActive(state)) {
-    throw err('ROUTE_FAILED', 'direct routes captured by tunnel');
-  }
-  this.applied = true;
-  if (this.logger) this.logger.info('tun routes applied', { core: this.core, bypass: addresses.length });
-  return true;
-};
-
-/* Verify public traffic actually leaves through the tunnel. */
-RouteManager.prototype.routeActive = function () {
-  var probes = ['9.9.9.9', '1.0.0.1', '208.67.222.222'];
-  var i, out;
-  for (i = 0; i < probes.length; i++) {
-    out = this.ip(['route', 'get', probes[i]]);
-    if (out.code === 0 && (out.stdout.indexOf(TUN_NAME) >= 0 || out.stdout.indexOf(TUN_GW) >= 0)) return true;
-  }
-  return false;
-};
-
-/* Undo everything applyTunRoutes did and restore the original default route.
-   Safe to call repeatedly and safe to call when nothing was applied. */
-RouteManager.prototype.rollback = function (options) {
-  options = options || {};
-  var state = this.loadState();
-  var original = state && state.original;
-  var addresses = (state && state.serverAddresses) || [];
-  var serverRoutes = (state && state.serverRoutes) || {};
-  var directRoutes = state && state.directRoutes;
-  var ipv6Routes = (state && state.ipv6Routes) || {};
-  var i, route;
-
-  if (!this.available()) return false;
-
-  for (i = 0; i < SPLIT_ROUTES.length; i++) this.ip(['route', 'del', SPLIT_ROUTES[i]]);
-  for (i = 0; i < IPV6_BLOCK_ROUTES.length; i++) {
-    this.ip(['-6', 'route', 'del', 'unreachable', IPV6_BLOCK_ROUTES[i], 'metric', '42760']);
-    if (!options.preserveCurrentNetwork && ipv6Routes[IPV6_BLOCK_ROUTES[i]]) {
-      this.ip(['-6', 'route', 'replace'].concat(
-        String(ipv6Routes[IPV6_BLOCK_ROUTES[i]]).split(/\s+/)
-      ));
+    return (atomic.writeJsonAtomic(this.stateFile, p), p);
+  }),
+  (RouteManager.prototype.loadState = function () {
+    return atomic.readJson(this.stateFile, null);
+  }),
+  (RouteManager.prototype.tunExists = function () {
+    return 0 === this.ip(["link", "show", this.tunName]).code;
+  }),
+  (RouteManager.prototype.addServerBypass = function (e, t) {
+    var r, i;
+    if (!e) return !0;
+    if (!t || !t.device)
+      throw err("ROUTE_FAILED", "physical endpoint route unavailable");
+    ((r = ["route", "replace", e]),
+      t.gateway && (r = r.concat(["via", t.gateway])),
+      (r = r.concat(["dev", t.device])),
+      (i = this.ip(r)));
+    if (!i || 0 !== i.code)
+      throw (
+        this.logger &&
+          this.logger.warn("endpoint route install failed", {
+            status: i && "number" == typeof i.code ? i.code : -1,
+          }),
+        err("ROUTE_FAILED", "endpoint route install failed")
+      );
+    return !0;
+  }),
+  (RouteManager.prototype.removeServerBypass = function (e, t, r) {
+    e &&
+      (t &&
+        t.gateway &&
+        this.ip(["route", "del", e, "via", t.gateway, "dev", t.device]),
+      this.ip(["route", "del", e]),
+      r && this.ip(["route", "replace"].concat(String(r).split(/\s+/))));
+  }),
+  (RouteManager.prototype.installDirectBypasses = function (e) {
+    var t,
+      r,
+      i,
+      o,
+      a = e && e.original;
+    if (!a || !a.device)
+      throw err("ROUTE_FAILED", "physical default route unavailable");
+    for (t = 0; t < DIRECT_BYPASS_ROUTES.length; t++)
+      if (
+        ((o = ["route", "replace", (r = DIRECT_BYPASS_ROUTES[t]).prefix]),
+        r.gateway && a.gateway && (o = o.concat(["via", a.gateway])),
+        (o = o.concat(["dev", a.device])),
+        0 !== (i = this.ip(o)).code)
+      )
+        throw (
+          this.logger &&
+            this.logger.warn("direct route install failed", {
+              prefix: r.prefix,
+              status: i.code,
+            }),
+          err("ROUTE_FAILED", "direct route install failed")
+        );
+  }),
+  (RouteManager.prototype.directRoutesActive = function (e) {
+    var t,
+      r,
+      i,
+      o,
+      a = e && e.original,
+      /* Policy backend installs direct prefixes into its OWN vendor table;
+         verifying them against main was the false-negative that killed
+         healthy policy sessions. Exact-show checks become table-aware. */
+      n =
+        e && "policy" === e.routingBackend && e.policy && e.policy.table
+          ? String(e.policy.table)
+          : "";
+    if (!a || !a.device) return !1;
+    for (t = 0; t < DIRECT_BYPASS_ROUTES.length; t++)
+      if (
+        ((r = (o = DIRECT_BYPASS_ROUTES[t]).probe
+          ? this.ip(["route", "get", o.probe])
+          : n
+            ? this.ip(["route", "show", "table", n, "exact", o.prefix])
+            : this.ip(["route", "show", "exact", o.prefix])),
+        (i = /\bdev\s+(\S+)/.exec(r.stdout)),
+        0 !== r.code ||
+          !i ||
+          i[1] !== a.device ||
+          r.stdout.indexOf(this.tunName) >= 0 ||
+          r.stdout.indexOf(TUN_GW) >= 0)
+      )
+        return (
+          this.logger &&
+            this.logger.warn("direct route verification failed", {
+              prefix: o.prefix,
+              status: r.code,
+              table: n || "main",
+            }),
+          !1
+        );
+    return !0;
+  }),
+  (RouteManager.prototype.serverBypassesActive = function (e) {
+    var t,
+      r,
+      i,
+      o = (e && e.serverAddresses) || [],
+      a = e && e.original;
+    if (!o.length) return !0;
+    if (!a || !a.device) return !1;
+    for (t = 0; t < o.length; t++) {
+      ((r = this.ip(["route", "get", o[t]])),
+        (i = /\bdev\s+(\S+)/.exec(r.stdout)));
+      if (
+        0 !== r.code ||
+        !i ||
+        i[1] !== a.device ||
+        r.stdout.indexOf(this.tunName) >= 0 ||
+        r.stdout.indexOf(TUN_GW) >= 0
+      )
+        return (
+          this.logger &&
+            this.logger.warn("endpoint route verification failed", {
+              index: t,
+              status: r.code,
+              backend: (e && e.routingBackend) || "legacy",
+            }),
+          !1
+        );
     }
-  }
-  if (!options.preserveCurrentNetwork) {
-    for (i = 0; i < addresses.length; i++) {
-      this.removeServerBypass(addresses[i], original, serverRoutes[addresses[i]] || '');
-    }
-  }
-  /* Only remove this package's direct routes when the state explicitly
-     contains their snapshot. Older state files must not cause unrelated
-     physical routes to be deleted during upgrade recovery. */
-  if (directRoutes && !options.preserveCurrentNetwork) {
-    for (i = 0; i < DIRECT_BYPASS_ROUTES.length; i++) {
-      route = DIRECT_BYPASS_ROUTES[i];
-      this.ip(['route', 'del', route.prefix]);
-      if (directRoutes[route.prefix]) {
-        this.ip(['route', 'replace'].concat(
-          String(directRoutes[route.prefix]).split(/\s+/)
-        ));
+    return !0;
+  }),
+  (RouteManager.prototype.applyTunRoutes = function (e) {
+    var t,
+      r = e && e.original,
+      i = (e && e.serverAddresses) || [];
+    if (!this.available()) throw err("ROUTE_FAILED", "ip binary unavailable");
+    /* Arm the independent fail-open BEFORE any network object exists. */
+    this.armGuardian(e);
+    if (e && e.routingBackend === "policy" && e.policy) {
+      try {
+        this.policy.apply(e);
+        if (!this.serverBypassesActive(e))
+          throw err("ROUTE_FAILED", "endpoint routes captured by tunnel");
+        this.applied = !0;
+        this.logger && this.logger.info("tun routes applied", { core: this.core, backend: "policy" });
+        return !0;
+      } catch (policyError) {
+        this.policy.rollback(e);
+        e.routingBackend = "legacy";
+        e.policy = null;
+        this.persistState(e);
+        this.logger &&
+          this.logger.warn("policy routing transaction rolled back", {
+            code: policyError.code || "ROUTE_FAILED",
+          });
+        /* Backend changed: rearm with the legacy object set. */
+        this.armGuardian(e);
       }
     }
-  }
-
-  this.ip(['route', 'flush', 'dev', TUN_NAME]);
-  this.ip(['link', 'set', TUN_NAME, 'down']);
-  this.ip(['addr', 'flush', 'dev', TUN_NAME]);
-  this.ip(['link', 'delete', TUN_NAME]);
-
-  /* On a physical network transition, the current network manager route is
-     authoritative; restoring the old gateway/device could strand the TV. */
-  if (!options.preserveCurrentNetwork && original && original.device) {
-    if (this.readDefaultRoute() === null) {
-      if (original.gateway) {
-        this.ip(['route', 'replace', 'default', 'via', original.gateway, 'dev', original.device]);
-      } else {
-        this.ip(['route', 'replace', 'default', 'dev', original.device]);
-      }
+    for (t = 0; t < SPLIT_ROUTES.length; t++)
+      this.ip(["route", "del", SPLIT_ROUTES[t]]);
+    for (t = 0; t < IPV6_BLOCK_ROUTES.length; t++)
+      this.ip([
+        "-6",
+        "route",
+        "replace",
+        "unreachable",
+        IPV6_BLOCK_ROUTES[t],
+        "metric",
+        "42760",
+      ]);
+    for (
+      "sing-box" === this.core
+        ? this.ip(["addr", "add", TUN_IP + "/" + TUN_MASK, "dev", this.tunName])
+        : this.ip([
+            "addr",
+            "add",
+            TUN_IP + "/" + TUN_MASK,
+            "peer",
+            TUN_GW,
+            "dev",
+            this.tunName,
+          ]),
+        this.ip(["link", "set", this.tunName, "up"]),
+        t = 0;
+      t < i.length;
+      t++
+    )
+      this.addServerBypass(i[t], r);
+    for (this.installDirectBypasses(e), t = 0; t < SPLIT_ROUTES.length; t++)
+      "sing-box" === this.core
+        ? this.ip(["route", "replace", SPLIT_ROUTES[t], "dev", this.tunName])
+        : this.ip([
+            "route",
+            "replace",
+            SPLIT_ROUTES[t],
+            "via",
+            TUN_GW,
+            "dev",
+            this.tunName,
+          ]);
+    this.ip(["route", "flush", "cache"]);
+    if (!this.directRoutesActive(e) || !this.serverBypassesActive(e)) {
+      /* Transient netlink/cache propagation on webOS 5: wait briefly,
+         flush once more, then recheck before aborting the whole connect. */
+      var verifyAfter = Date.now() + 250;
+      while (Date.now() < verifyAfter) {}
+      this.ip(["route", "flush", "cache"]);
+      if (!this.directRoutesActive(e))
+        throw err("ROUTE_FAILED", "direct routes captured by tunnel");
+      if (!this.serverBypassesActive(e))
+        throw err("ROUTE_FAILED", "endpoint routes captured by tunnel");
+      this.logger &&
+        this.logger.warn("direct route verification passed on recheck");
     }
-  }
-  this.ip(['route', 'flush', 'cache']);
-  this.applied = false;
-  atomic.removeQuiet(this.stateFile);
-  if (this.logger) this.logger.info('routes rolled back');
-  return true;
-};
-
-RouteManager.prototype.diagnostics = function () {
-  var state = this.loadState();
-  var publicRoute = this.ip(['route', 'get', '9.9.9.9']);
-  return {
-    core: this.core,
-    ipAvailable: this.available(),
-    tunPresent: this.tunExists(),
-    routeActive: this.routeActive(),
-    directBypassActive: this.directRoutesActive(state),
-    originalDevice: (state && state.original && state.original.device) || '',
-    bypassCount: (state && state.serverAddresses && state.serverAddresses.length) || 0,
-    ipv6Blocked: this.ip(['-6', 'route', 'show', IPV6_BLOCK_ROUTES[0]]).stdout.indexOf('unreachable') >= 0,
-    publicRouteUsesTun: publicRoute.stdout.indexOf(TUN_NAME) >= 0 || publicRoute.stdout.indexOf(TUN_GW) >= 0
-  };
-};
-
-module.exports = {
-  TUN_NAME: TUN_NAME,
-  TUN_IP: TUN_IP,
-  TUN_GW: TUN_GW,
-  TUN_MASK: TUN_MASK,
-  SPLIT_ROUTES: SPLIT_ROUTES,
-  IPV6_BLOCK_ROUTES: IPV6_BLOCK_ROUTES,
-  DIRECT_BYPASS_ROUTES: DIRECT_BYPASS_ROUTES,
-  IP_CANDIDATES: IP_CANDIDATES,
-  RouteManager: RouteManager,
-  routeIdentity: routeIdentity,
-  decodeProcIpv4: decodeProcIpv4,
-  findIpBinary: findIpBinary
-};
+    return (
+      (this.applied = !0),
+      this.logger &&
+        this.logger.info("tun routes applied", {
+          core: this.core,
+          bypass: i.length,
+        }),
+      !0
+    );
+  }),
+  (RouteManager.prototype.routeActive = function () {
+    var e,
+      t,
+      r = ["9.9.9.9", "1.0.0.1", "208.67.222.222"];
+    var state = this.loadState();
+    if (state && state.routingBackend === "policy" && state.policy)
+      return this.policy.routeActive(state);
+    for (e = 0; e < r.length; e++)
+      if (
+        0 === (t = this.ip(["route", "get", r[e]])).code &&
+        (t.stdout.indexOf(this.tunName) >= 0 || t.stdout.indexOf(TUN_GW) >= 0)
+      )
+        return !0;
+    return !1;
+  }),
+  (RouteManager.prototype.physicalRestored = function () {
+    var physical = this.readDefaultRoute();
+    var publicRoute = this.ip(["route", "get", "9.9.9.9"]);
+    return !!(physical && physical.device && physical.device !== this.tunName) &&
+      publicRoute.code === 0 &&
+      publicRoute.stdout.indexOf(this.tunName) < 0 &&
+      publicRoute.stdout.indexOf(TUN_GW) < 0;
+  }),
+  (RouteManager.prototype.rollback = function (e) {
+    e = e || {};
+    var t,
+      r,
+      i = this.loadState(),
+      o = i && i.original,
+      a = (i && i.serverAddresses) || [],
+      s = (i && i.serverRoutes) || {},
+      n = i && i.directRoutes,
+      u = (i && i.ipv6Routes) || {};
+    if (!this.available()) return !1;
+    /* Ownership guard: with no recorded state of our own there is nothing
+       this edition may delete. Blindly removing generic split routes or
+       interfaces here is what let an idle edition destroy a foreign
+       tunnel; recovery of OUR stale state always has a state file. */
+    if (!i && !e.force)
+      return (
+        this.logger &&
+          this.logger.warn("rollback skipped: no owned route state"),
+        this.physicalRestored()
+      );
+    if (i && i.policy) this.policy.rollback(i);
+    for (t = 0; t < SPLIT_ROUTES.length; t++)
+      this.ip(["route", "del", SPLIT_ROUTES[t]]);
+    for (t = 0; t < IPV6_BLOCK_ROUTES.length; t++)
+      (this.ip([
+        "-6",
+        "route",
+        "del",
+        "unreachable",
+        IPV6_BLOCK_ROUTES[t],
+        "metric",
+        "42760",
+      ]),
+        !e.preserveCurrentNetwork &&
+          u[IPV6_BLOCK_ROUTES[t]] &&
+          this.ip(
+            ["-6", "route", "replace"].concat(
+              String(u[IPV6_BLOCK_ROUTES[t]]).split(/\s+/)
+            )
+          ));
+    if (!e.preserveCurrentNetwork)
+      for (t = 0; t < a.length; t++)
+        this.removeServerBypass(a[t], o, s[a[t]] || "");
+    if (n && !e.preserveCurrentNetwork)
+      for (t = 0; t < DIRECT_BYPASS_ROUTES.length; t++)
+        ((r = DIRECT_BYPASS_ROUTES[t]),
+          this.ip(["route", "del", r.prefix]),
+          n[r.prefix] &&
+            this.ip(
+              ["route", "replace"].concat(String(n[r.prefix]).split(/\s+/))
+            ));
+    return (
+      this.ip(["route", "flush", "dev", this.tunName]),
+      this.ip(["link", "set", this.tunName, "down"]),
+      this.ip(["addr", "flush", "dev", this.tunName]),
+      this.ip(["link", "delete", this.tunName]),
+      !e.preserveCurrentNetwork &&
+        o &&
+        o.device &&
+        null === this.readDefaultRoute() &&
+        (o.gateway
+          ? this.ip([
+              "route",
+              "replace",
+              "default",
+              "via",
+              o.gateway,
+              "dev",
+              o.device,
+            ])
+          : this.ip(["route", "replace", "default", "dev", o.device])),
+      this.ip(["route", "flush", "cache"]),
+      (this.applied = !1),
+      this.physicalRestored() && atomic.removeQuiet(this.stateFile),
+      this.logger && this.logger.info("routes rolled back"),
+      /* Disarm only after the physical path is verified: if rollback
+         failed, the guardian stays armed and will fail-open on expiry. */
+      this.physicalRestored()
+        ? (this.guardian && this.guardian.enabled && this.guardian.disarm(),
+          !0)
+        : (this.logger &&
+            this.logger.warn("physical route not restored, netguard stays armed"),
+          !1)
+    );
+  }),
+  (RouteManager.prototype.physicalMtu = function (r) {
+    /* Deliberately avoids loadState(): config building must never reread
+       the persisted snapshot behind a live connection. */
+    var e,
+      t = r || ((this.readDefaultRoute() || {}).device || "");
+    if (!t) return 0;
+    e = /(?:^|\s)mtu\s+(\d+)/i.exec(this.ip(["link", "show", t]).stdout);
+    return e ? parseInt(e[1], 10) : 0;
+  }),
+  (RouteManager.prototype.diagnostics = function () {
+    var e = this.loadState(),
+      t = this.ip(["route", "get", "9.9.9.9"]);
+    return {
+      core: this.core,
+      routingBackend: (e && e.routingBackend) || "legacy",
+      ipAvailable: this.available(),
+      tunPresent: this.tunExists(),
+      routeActive: this.routeActive(),
+      directBypassActive: this.directRoutesActive(e),
+      endpointBypassActive: this.serverBypassesActive(e),
+      originalDevice: (e && e.original && e.original.device) || "",
+      bypassCount: (e && e.serverAddresses && e.serverAddresses.length) || 0,
+      ipv6Blocked:
+        !!(e && e.routingBackend === "policy" && e.policy && e.policy.ipv6RuleApplied) ||
+        this.ip(["-6", "route", "show", IPV6_BLOCK_ROUTES[0]]).stdout.indexOf("unreachable") >= 0,
+      publicRouteUsesTun:
+        t.stdout.indexOf(this.tunName) >= 0 || t.stdout.indexOf(TUN_GW) >= 0,
+    };
+  }),
+  (module.exports = {
+    TUN_NAME: TUN_NAME,
+    TUN_NAMES: TUN_NAMES,
+    tunNameFor: tunNameFor,
+    mtuPolicy: mtuPolicyLib.mtuPolicy,
+    MTU_POLICY: mtuPolicyLib,
+    TUN_IP: TUN_IP,
+    TUN_GW: TUN_GW,
+    TUN_MASK: TUN_MASK,
+    SPLIT_ROUTES: SPLIT_ROUTES,
+    IPV6_BLOCK_ROUTES: IPV6_BLOCK_ROUTES,
+    DIRECT_BYPASS_ROUTES: DIRECT_BYPASS_ROUTES,
+    IP_CANDIDATES: IP_CANDIDATES,
+    RouteManager: RouteManager,
+    routeIdentity: routeIdentity,
+    decodeProcIpv4: decodeProcIpv4,
+    findIpBinary: findIpBinary,
+  }));

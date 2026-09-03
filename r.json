@@ -13,18 +13,18 @@
       "manifestUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/com.alcyone.vpn.manifest.json",
       "manifest": {
         "id": "com.alcyone.vpn",
-        "version": "4.0.4",
+        "version": "4.2.2",
         "type": "web",
         "title": "Alcyone XRay",
         "appDescription": "XRay edition for large subscriptions, XHTTP, and complete configurations on rooted LG webOS TVs.",
         "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
         "sourceUrl": "https://github.com/ichikanya/Alcyone",
         "rootRequired": true,
-        "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.0.4/Alcyone-XRay_4.0.4.ipk",
+        "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.2.2/Alcyone-XRay_4.2.2.ipk",
         "ipkHash": {
-          "sha256": "1a833239d6656d8a2d267f878f362e70a53d1a89bf1915ab3a05d42b040f9a0a"
+          "sha256": "0b6bbf616c74538fe881d04a266cdb8473ac9cf21be6866ab7fff76396594eeb"
         },
-        "ipkSize": 22545102
+        "ipkSize": 22154244
       },
       "pool": "main",
       "shortDescription": "XRay edition for large subscriptions, XHTTP, and complete configurations.",
@@ -37,18 +37,18 @@
       "manifestUrl": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/com.alcyone.vpn.singbox.manifest.json",
       "manifest": {
         "id": "com.alcyone.vpn.singbox",
-        "version": "4.0.4",
+        "version": "4.2.2",
         "type": "web",
         "title": "Alcyone sing-box",
         "appDescription": "Low-resource sing-box edition with a native TUN tunnel for rooted LG webOS TVs.",
         "iconUri": "https://raw.githubusercontent.com/ichikanya/Alcyone/main/icon.png",
         "sourceUrl": "https://github.com/ichikanya/Alcyone",
         "rootRequired": true,
-        "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.0.4/Alcyone-sing-box_4.0.4.ipk",
+        "ipkUrl": "https://github.com/ichikanya/Alcyone/releases/download/v4.2.2/Alcyone-sing-box_4.2.2.ipk",
         "ipkHash": {
-          "sha256": "ec708e424fb4204c0bbe54b1bbd7c68a071c0cc951b7b8b3059b12546a10dd22"
+          "sha256": "a84d5dd510fc8d63319aa04d7d67dc66141771687df049add7239418b5b77e84"
         },
-        "ipkSize": 12195354
+        "ipkSize": 12069746
       },
       "pool": "main",
       "shortDescription": "Low-resource sing-box edition with one native TUN process.",

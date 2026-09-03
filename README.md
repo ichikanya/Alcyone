@@ -1,10 +1,10 @@
 # Alcyone
 
-Alcyone is a VPN client for rooted LG webOS TVs. Version 4.0.4 is available in two independently installable editions that share the same TV UI, subscription importer, routing controls, and web interface.
+Alcyone is a VPN client for rooted LG webOS TVs. Version 4.2.0 is available in two independently installable editions that share the same TV UI, subscription importer, routing controls, and web interface.
 
 | Edition | Best for | Core and identity |
 | --- | --- | --- |
-| **Alcyone XRay** | Large subscriptions, many configurations, XHTTP, and complete XRay configs with routing or balancers | Xray 26.3.27 + tun2socks; existing `com.alcyone.vpn` identity and `/var/lib/alcyone` data |
+| **Alcyone XRay** | Large subscriptions, many configurations, XHTTP, and complete XRay configs with routing or balancers | Xray 26.3.27 (native-TUN mode behind an edition flag); existing `com.alcyone.vpn` identity and `/var/lib/alcyone` data |
 | **Alcyone sing-box** | Low-powered TVs, low process and descriptor use, stability, and fast startup | Trimmed sing-box 1.13.14 with one native system-TUN process; separate `com.alcyone.vpn.singbox` identity and `/var/lib/alcyone-singbox` data |
 
 Both editions support VLESS, VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2 links, unified subscription import, server selection and ping, subscription updates, VPN autostart, external-IP checks, tunnel logs, Russian/English UI, and LG remote navigation. Root access is required.
@@ -24,8 +24,8 @@ https://ichikanya.github.io/Alcyone/r.json
 
 The feed lists both editions. For manual installation:
 
-- [Alcyone XRay 4.0.4](https://github.com/ichikanya/Alcyone/releases/download/v4.0.4/Alcyone-XRay_4.0.4.ipk)
-- [Alcyone sing-box 4.0.4](https://github.com/ichikanya/Alcyone/releases/download/v4.0.4/Alcyone-sing-box_4.0.4.ipk)
+- [Alcyone XRay 4.2.0](https://github.com/ichikanya/Alcyone/releases/download/v4.2.0/Alcyone-XRay_4.2.0.ipk)
+- [Alcyone sing-box 4.2.0](https://github.com/ichikanya/Alcyone/releases/download/v4.2.0/Alcyone-sing-box_4.2.0.ipk)
 
 Install an IPK with webOS Dev Manager, `ares-install`, or the Homebrew Channel installation service.
 
@@ -58,8 +58,8 @@ python build_ipk.py --edition all
 Artifacts are written to:
 
 ```text
-release-assets/Alcyone-XRay_4.0.4.ipk
-release-assets/Alcyone-sing-box_4.0.4.ipk
+release-assets/Alcyone-XRay_4.2.2.ipk
+release-assets/Alcyone-sing-box_4.2.2.ipk
 ```
 
 The builder stages edition-specific metadata, service identifiers and pinned
@@ -89,7 +89,7 @@ GitHub Actions runs the same checks, builds each edition in a separate matrix jo
 
 - The XRay edition is the in-place upgrade path for existing Alcyone installations and preserves `/var/lib/alcyone`.
 - The sing-box edition uses its own app ID, storage, port 8081, and autostart entry. On first install it can seed its profile store from XRay without sharing later changes.
-- Both editions may be installed together. A cross-edition lock enforces that only one owns the TV-wide `tun0` route at a time; the second edition refuses to connect while the first holds it.
+- Both editions may be installed together. A cross-edition lock enforces that only one owns the VPN diversion at a time; the second edition refuses to connect while the first holds it. Each edition uses its own TUN device (`alx0` for XRay, `als0` for sing-box), so neither can tear down the other's interface.
 - XHTTP and full XRay routing/balancer semantics remain XRay-only; sing-box rejects XHTTP before startup.
 - After turning on the TV, wait for its network connection before starting VPN. Disabling Quick Start is recommended for predictable autostart.
 
@@ -105,4 +105,4 @@ Feedback and bug reports: [@AlcyoneVPN](https://t.me/AlcyoneVPN)
 
 ## По-русски
 
-Alcyone 4.0.4 выпускается в двух вариантах: **XRay** для больших подписок, XHTTP и полных конфигураций XRay; **sing-box** для маломощных телевизоров, быстрого запуска и минимального количества процессов. Оба варианта имеют прежний интерфейс и устанавливаются независимо. Одновременно запускайте только один VPN-туннель.
+Alcyone 4.2.0 выпускается в двух вариантах: **XRay** для больших подписок, XHTTP и полных конфигураций XRay; **sing-box** для маломощных телевизоров, быстрого запуска и минимального количества процессов. Оба варианта имеют прежний интерфейс и устанавливаются независимо. Одновременно запускайте только один VPN-туннель.

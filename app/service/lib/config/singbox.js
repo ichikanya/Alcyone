@@ -1,253 +1,319 @@
-'use strict';
-
-/* sing-box configuration builder (sing-box Edition).
-
-   This edition targets low-powered TVs: one native system-TUN process, no
-   auxiliary tun2socks, warn-level logging and a minimal rule set. Keeping the
-   config small is a deliberate resource decision, not an oversight.
-
-   XHTTP is an Xray-only transport; asking for it here returns a structured
-   error the frontend localizes rather than silently producing a broken
-   tunnel. */
-
-var parsers = require('../proto/parsers');
-var errors = require('../errors');
-var err = errors.err;
-
-var TUN_INTERFACE = 'tun0';
-var TUN_ADDRESS = '198.18.0.1/30';
-var TUN_MTU = 1500;
-var SOCKS_PORT = 10801;
-var BOOTSTRAP_TAG = 'alcyone-bootstrap';
-
-function own(object, key) {
-  return Object.prototype.hasOwnProperty.call(object, key);
+"use strict";
+var parsers = require("../proto/parsers"),
+  errors = require("../errors"),
+  err = errors.err,
+  /* Edition-specific interface: the sing-box edition owns als0, so it can
+     never collide with (or be destroyed by) the XRay edition's alx0. */
+  TUN_INTERFACE = "als0",
+  mtuPolicy = require("../mtu-policy").mtuPolicy,
+  TUN_ADDRESS = "198.18.0.1/30",
+  TUN_MTU = 1500,
+  SOCKS_PORT = 10801,
+  HTTP_PORT = 10802,
+  BOOTSTRAP_TAG = "alcyone-bootstrap",
+  DNS_TAG = "alcyone-dns";
+function own(t, r) {
+  return Object.prototype.hasOwnProperty.call(t, r);
 }
-function canonicalHost(host) {
-  return String(host || '').toLowerCase();
+function canonicalHost(t) {
+  return String(t || "").toLowerCase();
 }
-
-function tlsFor(p, fallbackHost, enabledByDefault) {
-  var security, tls;
-  p = p || {};
-  security = String(p.security || (enabledByDefault ? 'tls' : 'none')).toLowerCase();
-  if (security !== 'tls' && security !== 'reality') return null;
-  tls = {
-    enabled: true,
-    server_name: p.sni || p.serverName || p.servername || p.peer || fallbackHost,
-    insecure: parsers.truthy(p.allowInsecure || p.insecure || p['skip-cert-verify'])
-  };
-  if (p.alpn) tls.alpn = String(p.alpn).split(',').filter(Boolean);
-  if (p.fp || p.fingerprint) tls.utls = { enabled: true, fingerprint: p.fp || p.fingerprint };
-  if (security === 'reality') {
-    tls.reality = {
-      enabled: true,
-      public_key: p.pbk || p.publicKey || p.public_key || '',
-      short_id: p.sid || p.shortId || p.short_id || ''
+function tlsFor(t, r, e) {
+  var o, s;
+  return (
+    (t = t || {}),
+    "tls" !== (o = String(t.security || (e ? "tls" : "none")).toLowerCase()) &&
+    "reality" !== o
+      ? null
+      : ((s = {
+          enabled: !0,
+          server_name: t.sni || t.serverName || t.servername || t.peer || r,
+          insecure: parsers.truthy(
+            t.allowInsecure || t.insecure || t["skip-cert-verify"]
+          ),
+        }),
+        t.alpn && (s.alpn = String(t.alpn).split(",").filter(Boolean)),
+        (t.fp || t.fingerprint) &&
+          (s.utls = { enabled: !0, fingerprint: t.fp || t.fingerprint }),
+        "reality" === o &&
+          (s.reality = {
+            enabled: !0,
+            public_key: t.pbk || t.publicKey || t.public_key || "",
+            short_id: t.sid || t.shortId || t.short_id || "",
+          }),
+        s)
+  );
+}
+function transportFor(t) {
+  var r, e, o;
+  if (
+    ((t = t || {}),
+    "h2" === (r = String(t.type || t.network || "tcp").toLowerCase()) &&
+      (r = "http"),
+    "xhttp" === r || "splithttp" === r)
+  )
+    throw err("UNSUPPORTED_TRANSPORT", "xhttp", {
+      transport: "xhttp",
+      edition: "sing-box",
+    });
+  if ("tcp" === r || "raw" === r || "none" === r) return null;
+  if ("ws" === r || "websocket" === r)
+    return (
+      (e = { type: "ws", path: t.path || "/", headers: {} }),
+      t.host && (e.headers.Host = t.host),
+      (o = parseInt(t.ed || t.maxEarlyData, 10)) > 0 && (e.max_early_data = o),
+      (t.eh || t.earlyDataHeaderName) &&
+        (e.early_data_header_name = t.eh || t.earlyDataHeaderName),
+      e
+    );
+  if ("grpc" === r)
+    return {
+      type: "grpc",
+      service_name: t.serviceName || t.service_name || t.service || "",
     };
-  }
-  return tls;
+  if ("http" === r)
+    return {
+      type: "http",
+      host: t.host ? String(t.host).split(",").filter(Boolean) : [],
+      path: t.path || "/",
+    };
+  if ("httpupgrade" === r)
+    return {
+      type: "httpupgrade",
+      host: t.host || "",
+      path: t.path || "/",
+      headers: {},
+    };
+  if ("quic" === r) return { type: "quic" };
+  throw err("UNSUPPORTED_TRANSPORT", r, { transport: r, edition: "sing-box" });
 }
-
-function transportFor(p) {
-  var network, ws, early;
-  p = p || {};
-  network = String(p.type || p.network || 'tcp').toLowerCase();
-  if (network === 'h2') network = 'http';
-  if (network === 'xhttp' || network === 'splithttp') {
-    throw err('UNSUPPORTED_TRANSPORT', 'xhttp', { transport: 'xhttp', edition: 'sing-box' });
-  }
-  if (network === 'tcp' || network === 'raw' || network === 'none') return null;
-  if (network === 'ws' || network === 'websocket') {
-    ws = { type: 'ws', path: p.path || '/', headers: {} };
-    if (p.host) ws.headers.Host = p.host;
-    early = parseInt(p.ed || p.maxEarlyData, 10);
-    if (early > 0) ws.max_early_data = early;
-    if (p.eh || p.earlyDataHeaderName) ws.early_data_header_name = p.eh || p.earlyDataHeaderName;
-    return ws;
-  }
-  if (network === 'grpc') return { type: 'grpc', service_name: p.serviceName || p.service_name || p.service || '' };
-  if (network === 'http') {
-    return { type: 'http', host: p.host ? String(p.host).split(',').filter(Boolean) : [], path: p.path || '/' };
-  }
-  if (network === 'httpupgrade') return { type: 'httpupgrade', host: p.host || '', path: p.path || '/', headers: {} };
-  if (network === 'quic') return { type: 'quic' };
-  throw err('UNSUPPORTED_TRANSPORT', network, { transport: network, edition: 'sing-box' });
+function outboundFor(t) {
+  var r,
+    e,
+    o,
+    s = parsers.parseProxyLink(t.link),
+    n = s.params || {},
+    p = {
+      type: "ss" === s.protocol ? "shadowsocks" : s.protocol,
+      tag: "proxy",
+      server: s.host,
+      server_port: s.port,
+    };
+  return "hysteria2" === s.protocol
+    ? ((p.type = "hysteria2"),
+      (p.password = s.password),
+      (p.tls = tlsFor(
+        {
+          security: "tls",
+          sni: n.sni || n.peer || n.serverName || n.servername,
+          insecure: n.insecure || n.allowInsecure || n["skip-cert-verify"],
+          alpn: n.alpn,
+          fp: n.fp || n.fingerprint,
+        },
+        s.host,
+        !0
+      )),
+      n.obfs &&
+        ((p.obfs = { type: n.obfs }),
+        (o = n["obfs-password"] || n.obfsPassword || n.obfs_password) &&
+          (p.obfs.password = o)),
+      (o = parseInt(n.upmbps || n.up_mbps, 10)) > 0 && (p.up_mbps = o),
+      (o = parseInt(n.downmbps || n.down_mbps, 10)) > 0 && (p.down_mbps = o),
+      p)
+    : "ss" === s.protocol
+      ? ((p.method = s.method),
+        (p.password = s.password),
+        n.plugin && (p.plugin = n.plugin),
+        (n.plugin_opts || n.pluginOpts) &&
+          (p.plugin_opts = n.plugin_opts || n.pluginOpts),
+        p)
+      : "socks" === s.protocol
+        ? ((p.type = "socks"),
+          (p.version = "5"),
+          s.user && (p.username = s.user),
+          s.pass && (p.password = s.pass),
+          p)
+        : ("trojan" === s.protocol
+            ? ((p.password = s.password), (p.tls = tlsFor(n, s.host, !0)))
+            : "vmess" === s.protocol
+              ? ((p.uuid = s.uuid),
+                (p.security = s.scy || "auto"),
+                (p.alter_id = s.aid || 0),
+                (e = tlsFor(n, s.host, !1)) && (p.tls = e))
+              : ((p.type = "vless"),
+                (p.uuid = s.uuid),
+                n.flow && (p.flow = n.flow),
+                (e = tlsFor(n, s.host, !1)) && (p.tls = e)),
+          (r = transportFor(n)) && (p.transport = r),
+          p);
 }
-
-function outboundFor(profile) {
-  var parsed = parsers.parseProxyLink(profile.link);
-  var p = parsed.params || {};
-  var outbound = {
-    type: parsed.protocol === 'ss' ? 'shadowsocks' : parsed.protocol,
-    tag: 'proxy',
-    server: parsed.host,
-    server_port: parsed.port
-  };
-  var transport, tls, value;
-
-  if (parsed.protocol === 'hysteria2') {
-    outbound.type = 'hysteria2';
-    outbound.password = parsed.password;
-    outbound.tls = tlsFor({
-      security: 'tls',
-      sni: p.sni || p.peer || p.serverName || p.servername,
-      insecure: p.insecure || p.allowInsecure || p['skip-cert-verify'],
-      alpn: p.alpn,
-      fp: p.fp || p.fingerprint
-    }, parsed.host, true);
-    if (p.obfs) {
-      outbound.obfs = { type: p.obfs };
-      value = p['obfs-password'] || p.obfsPassword || p.obfs_password;
-      if (value) outbound.obfs.password = value;
-    }
-    value = parseInt(p.upmbps || p.up_mbps, 10);
-    if (value > 0) outbound.up_mbps = value;
-    value = parseInt(p.downmbps || p.down_mbps, 10);
-    if (value > 0) outbound.down_mbps = value;
-    return outbound;
-  }
-  if (parsed.protocol === 'ss') {
-    outbound.method = parsed.method;
-    outbound.password = parsed.password;
-    if (p.plugin) outbound.plugin = p.plugin;
-    if (p.plugin_opts || p.pluginOpts) outbound.plugin_opts = p.plugin_opts || p.pluginOpts;
-    return outbound;
-  }
-  if (parsed.protocol === 'socks') {
-    outbound.type = 'socks';
-    outbound.version = '5';
-    if (parsed.user) outbound.username = parsed.user;
-    if (parsed.pass) outbound.password = parsed.pass;
-    return outbound;
-  }
-  if (parsed.protocol === 'trojan') {
-    outbound.password = parsed.password;
-    outbound.tls = tlsFor(p, parsed.host, true);
-  } else if (parsed.protocol === 'vmess') {
-    outbound.uuid = parsed.uuid;
-    outbound.security = parsed.scy || 'auto';
-    outbound.alter_id = parsed.aid || 0;
-    tls = tlsFor(p, parsed.host, false);
-    if (tls) outbound.tls = tls;
-  } else {
-    outbound.type = 'vless';
-    outbound.uuid = parsed.uuid;
-    if (p.flow) outbound.flow = p.flow;
-    tls = tlsFor(p, parsed.host, false);
-    if (tls) outbound.tls = tls;
-  }
-  transport = transportFor(p);
-  if (transport) outbound.transport = transport;
-  return outbound;
+function applyBootstrap(t, r) {
+  var e,
+    o,
+    s,
+    n,
+    p,
+    a,
+    i,
+    u = r && r.map,
+    l = Object.create(null),
+    c = Object.create(null),
+    d = !1;
+  if (!u) return t;
+  for (e in u)
+    own(u, e) &&
+      "[object Array]" === Object.prototype.toString.call(u[e]) &&
+      u[e].length &&
+      ((c[(o = canonicalHost(e))] = u[e].slice(0)),
+      (l[o] = c[o].slice(0)),
+      (d = !0));
+  if (!d) return t;
+  for (
+    (t.dns && "object" == typeof t.dns) || (t.dns = {}),
+      p =
+        "[object Array]" === Object.prototype.toString.call(t.dns.servers)
+          ? t.dns.servers
+          : [],
+      n = Object.create(null),
+      i = 0;
+    i < p.length;
+    i++
+  )
+    p[i] && p[i].tag && (n[String(p[i].tag)] = !0);
+  for (s = BOOTSTRAP_TAG, i = 2; n[s];) ((s = BOOTSTRAP_TAG + "-" + i), i++);
+  for (
+    (p = p.slice(0)).unshift({ type: "hosts", tag: s, predefined: l }),
+      t.dns.servers = p,
+      a =
+        "[object Array]" === Object.prototype.toString.call(t.outbounds)
+          ? t.outbounds
+          : [],
+      i = 0;
+    i < a.length;
+    i++
+  )
+    a[i] &&
+      own(c, canonicalHost(a[i].server)) &&
+      (a[i].domain_resolver = { server: s, strategy: "ipv4_only" });
+  return t;
 }
-
-/* Same bootstrap contract as the XRay edition, expressed in sing-box's schema.
-
-   A `hosts` DNS server answers the endpoint from a static table, and the proxy
-   outbound's `domain_resolver` points at it, so resolving the endpoint never
-   needs the network. Only that one outbound is redirected; everything else
-   keeps whatever resolver the edition already used.
-
-   As in the XRay edition, `server` keeps the original domain, which is what
-   preserves TLS verification, SNI, REALITY server_name, gRPC authority and
-   WebSocket Host. */
-function applyBootstrap(cfg, bootstrap) {
-  var map = bootstrap && bootstrap.map;
-  var predefined = Object.create(null);
-  var normalized = Object.create(null);
-  var any = false;
-  var host, key, tag, usedTags, servers, outbounds, i;
-
-  if (!map) return cfg;
-  for (host in map) {
-    if (!own(map, host) ||
-        Object.prototype.toString.call(map[host]) !== '[object Array]' ||
-        !map[host].length) continue;
-    key = canonicalHost(host);
-    normalized[key] = map[host].slice(0);
-    predefined[key] = normalized[key].slice(0);
-    any = true;
-  }
-  if (!any) return cfg;
-
-  if (!cfg.dns || typeof cfg.dns !== 'object') cfg.dns = {};
-  servers = Object.prototype.toString.call(cfg.dns.servers) === '[object Array]' ? cfg.dns.servers : [];
-  /* Never remove or rewrite a user DNS server. Pick a deterministic free tag
-     if a full config passed to this helper already owns the reserved name. */
-  usedTags = Object.create(null);
-  for (i = 0; i < servers.length; i++) {
-    if (servers[i] && servers[i].tag) usedTags[String(servers[i].tag)] = true;
-  }
-  tag = BOOTSTRAP_TAG;
-  i = 2;
-  while (usedTags[tag]) {
-    tag = BOOTSTRAP_TAG + '-' + i;
-    i++;
-  }
-  servers = servers.slice(0);
-  servers.unshift({ type: 'hosts', tag: tag, predefined: predefined });
-  cfg.dns.servers = servers;
-
-  outbounds = Object.prototype.toString.call(cfg.outbounds) === '[object Array]' ? cfg.outbounds : [];
-  for (i = 0; i < outbounds.length; i++) {
-    if (!outbounds[i] || !own(normalized, canonicalHost(outbounds[i].server))) continue;
-    outbounds[i].domain_resolver = { server: tag, strategy: 'ipv4_only' };
-  }
-  return cfg;
+function uniqueDnsTag(t) {
+  var r,
+    e = {},
+    o = DNS_TAG,
+    s = 0;
+  for (r = 0; r < t.length; r++) t[r] && t[r].tag && (e[String(t[r].tag)] = !0);
+  for (; e[o];) o = DNS_TAG + "-" + ++s;
+  return o;
 }
-
-function build(profile, bootstrap) {
-  if (!profile) throw err('NO_ACTIVE_PROFILE', 'no profile');
-  return applyBootstrap({
-    log: { level: 'warn', timestamp: false },
-    inbounds: [{
-        type: 'tun',
-        tag: 'tun-in',
-        interface_name: TUN_INTERFACE,
-        address: [TUN_ADDRESS],
-        mtu: TUN_MTU,
-        /* Routing is owned by the service's route manager so rollback stays
-           under our control; sing-box must not install its own routes. */
-        auto_route: false,
-        stack: 'system',
-        udp_timeout: '30s'
-      }, {
-        /* Loopback-only and used solely for the bounded post-route bootstrap
-           check. It gives both editions the same health criterion without
-           contacting an arbitrary third-party probe service. */
-        type: 'socks',
-        tag: 'health-in',
-        listen: '127.0.0.1',
-        listen_port: SOCKS_PORT
-      }],
-    outbounds: [outboundFor(profile), { type: 'direct', tag: 'direct' }],
-    route: {
-      auto_detect_interface: true,
-      final: 'proxy',
-      rules: [{ ip_is_private: true, action: 'route', outbound: 'direct' }]
-    }
-  }, bootstrap);
+function applyDns(t, r) {
+  var e, o, s;
+  return r
+    ? ((e = t.dns && "object" == typeof t.dns ? t.dns : {}),
+      (s = uniqueDnsTag(
+        (o =
+          "[object Array]" === Object.prototype.toString.call(e.servers)
+            ? e.servers.slice(0)
+            : [])
+      )),
+      o.push({
+        type: "udp",
+        tag: s,
+        server: String(r),
+        server_port: 53,
+        detour: "proxy",
+      }),
+      (e.servers = o),
+      (e.final = s),
+      (t.dns = e),
+      (t.route && "object" == typeof t.route) || (t.route = { rules: [] }),
+      "[object Array]" !== Object.prototype.toString.call(t.route.rules) &&
+        (t.route.rules = []),
+      t.route.rules.unshift({ port: [53], action: "hijack-dns" }),
+      t)
+    : t;
 }
-
-function endpoints(profile) {
-  var parsed = parsers.parseProxyLink(profile.link);
-  return [{
-    host: parsed.host,
-    port: parsed.port,
-    network: parsed.protocol === 'hysteria2' ? 'udp' : 'tcp'
-  }];
+function buildTun(t, r, e) {
+  if (!t) throw err("NO_ACTIVE_PROFILE", "no profile");
+  return (
+    (e = e || {}),
+    applyBootstrap(
+      applyDns(
+        {
+          log: { level: "warn", timestamp: !1 },
+          inbounds: [
+            {
+              type: "tun",
+              tag: "tun-in",
+              interface_name: e.interfaceName || TUN_INTERFACE,
+              address: [TUN_ADDRESS],
+              mtu: e.mtu || mtuPolicy(),
+              auto_route: !1,
+              stack: "system",
+              udp_timeout: "30s",
+            },
+            {
+              type: "socks",
+              tag: "health-in",
+              listen: "127.0.0.1",
+              listen_port: SOCKS_PORT,
+            },
+          ],
+          outbounds: [outboundFor(t), { type: "direct", tag: "direct" }],
+          route: {
+            auto_detect_interface: !0,
+            final: "proxy",
+            rules: [{ ip_is_private: !0, action: "route", outbound: "direct" }],
+          },
+        },
+        e.dnsServer
+      ),
+      r
+    )
+  );
 }
-
+function build(t, r, e) {
+  return "systemProxy" === (e = e || {}).mode
+    ? buildSystemProxy(t, r, e)
+    : buildTun(t, r, e);
+}
+function buildSystemProxy(t, r, e) {
+  var o = buildTun(t, r, e || {});
+  return (
+    (o.inbounds = [
+      {
+        type: "http",
+        tag: "http-in",
+        listen: "127.0.0.1",
+        listen_port: HTTP_PORT,
+      },
+    ]),
+    o
+  );
+}
+function endpoints(t) {
+  var r = parsers.parseProxyLink(t.link);
+  return [
+    {
+      host: r.host,
+      port: r.port,
+      network: "hysteria2" === r.protocol ? "udp" : "tcp",
+    },
+  ];
+}
 module.exports = {
   TUN_INTERFACE: TUN_INTERFACE,
   TUN_ADDRESS: TUN_ADDRESS,
   SOCKS_PORT: SOCKS_PORT,
+  HTTP_PORT: HTTP_PORT,
   BOOTSTRAP_TAG: BOOTSTRAP_TAG,
   build: build,
+  buildTun: buildTun,
+  buildSystemProxy: buildSystemProxy,
   applyBootstrap: applyBootstrap,
+  applyDns: applyDns,
   outboundFor: outboundFor,
   tlsFor: tlsFor,
   transportFor: transportFor,
-  endpoints: endpoints
+  endpoints: endpoints,
 };

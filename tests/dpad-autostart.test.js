@@ -1,0 +1,11 @@
+"use strict";
+var assert = require("assert");
+var fs = require("fs");
+var path = require("path");
+var source = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8");
+assert.ok(source.indexOf("var settingsNav = document.querySelector('.nav[data-page=\"settings\"]')") >= 0);
+assert.ok(/"autostartToggle" === r\.id[\s\S]*?37 === e\) return Ce\(settingsNav\)/.test(source));
+assert.ok(/"autostartChoose" === r\.id[\s\S]*?37 === e\) return Ce\(settingsNav\)/.test(source));
+assert.ok(/"servers" === r\.id && B[\s\S]*?ot\(\{ input: "dpad" \}\)/.test(source));
+assert.ok(source.indexOf('"INPUT" !== r.tagName') >= 0, "text input cursor-left must not be stolen");
+console.log("autostart D-Pad ownership and Back focus contract tests passed");

@@ -1,314 +1,546 @@
-'use strict';
-
-/* First-run initialization and data migration.
-
-   This replaces the package maintainer scripts (preinst/postinst/prerm), which
-   webOS does not run. Everything here is idempotent: it may run on every
-   service start, twice concurrently, or after a partial failure, without
-   corrupting or duplicating user data.
-
-   Scope is strictly this edition's own directories. No other application's
-   files or binaries are read, copied, moved or deleted. */
-
-var fs = require('fs');
-var path = require('path');
-var atomic = require('./atomic');
-var storeLib = require('./store/profiles');
-var xrayAssets = require('./xray-assets');
-
-var MIGRATION_VERSION = 6;
-
-function fileExists(file) {
-  try { return fs.statSync(file).isFile(); } catch (e) { return false; }
+"use strict";
+var fs = require("fs"),
+  path = require("path"),
+  atomic = require("./atomic"),
+  errors = require("./errors"),
+  sharedPermissions = require("./shared-permissions"),
+  storeLib = require("./store/profiles"),
+  subscriptionCompat = require("./subscription-compat"),
+  xrayAssets = require("./xray-assets"),
+  MIGRATION_VERSION = 11,
+  STORE_BACKUP_KEEP = 7;
+function fileExists(t) {
+  try {
+    return fs.statSync(t).isFile();
+  } catch (t) {
+    return !1;
+  }
 }
-
-function Migrator(options) {
-  options = options || {};
-  this.paths = options.paths;
-  this.edition = options.edition;
-  this.logger = options.logger;
-  this.procRoot = options.procRoot || '/proc';
-  this.procReadlink = options.procReadlink || fs.readlinkSync;
-  this.kill = options.kill || process.kill;
+function procExecutablePath(t) {
+  return String(t || "").replace(/ \(deleted\)$/, "");
 }
-
-/* Create this edition's directory tree with restrictive permissions. */
-Migrator.prototype.ensureLayout = function () {
-  var dataDir = this.paths.dataDir;
-  atomic.ensureDir(dataDir);
-  atomic.ensureDir(path.join(dataDir, 'bin'));
-  atomic.ensureDir(path.dirname(this.paths.stateFile));
-  return true;
-};
-
-/* Copy the packaged cores into the writable data directory when they are
-   missing or the packaged copy is newer. Never downloads anything. */
-Migrator.prototype.installBundledCores = function () {
-  var appBin = path.join(this.paths.appDir, 'bin');
-  var dataBin = path.join(this.paths.dataDir, 'bin');
-  var names = this.edition.core === 'sing-box' ? ['sing-box'] : ['xray', 'tun2socks'];
-  var installed = [];
-  var i, source, target, sourceStat, targetStat, needsCopy;
-
-  for (i = 0; i < names.length; i++) {
-    source = path.join(appBin, names[i]);
-    target = path.join(dataBin, names[i]);
-    if (!fileExists(source)) continue;
-    needsCopy = true;
-    if (fileExists(target)) {
-      try {
-        sourceStat = fs.statSync(source);
-        targetStat = fs.statSync(target);
-        needsCopy = sourceStat.size !== targetStat.size || sourceStat.mtime.getTime() > targetStat.mtime.getTime();
-      } catch (e) {
-        needsCopy = true;
-      }
-    }
-    if (!needsCopy) continue;
-    try {
-      /* Write to a temp name then rename, so a running core is never replaced
-         underneath itself mid-write. */
-      fs.writeFileSync(target + '.new', fs.readFileSync(source), { mode: 493 });
-      fs.renameSync(target + '.new', target);
-      try { fs.chmodSync(target, 493); } catch (eMode) {}
-      installed.push(names[i]);
-    } catch (copyError) {
-      this.logger.warn('core install failed', { core: names[i] });
-    }
-  }
-  if (installed.length) this.logger.info('bundled cores installed', { cores: installed.join(',') });
-  return installed;
-};
-
-/* Install the checksum-pinned official routing databases beside the persisted
-   Xray binary. A valid existing copy is retained; a corrupt copy is replaced
-   only from a valid packaged source. */
-Migrator.prototype.installBundledXrayAssets = function () {
-  var appBin, dataBin, names, installed, i, name, source, target, problem;
-  if (this.edition.core !== 'xray') return [];
-  appBin = path.join(this.paths.appDir, 'bin');
-  dataBin = path.join(this.paths.dataDir, 'bin');
-  names = Object.keys(xrayAssets.ASSETS).sort();
-  installed = [];
-
-  for (i = 0; i < names.length; i++) {
-    name = names[i];
-    source = path.join(appBin, name);
-    target = path.join(dataBin, name);
-    problem = xrayAssets.checkFile(source, name);
-    if (problem) {
-      this.logger.warn('packaged Xray asset invalid', { asset: name, code: problem.code });
-      continue;
-    }
-    if (!xrayAssets.checkFile(target, name)) continue;
-    try {
-      fs.writeFileSync(target + '.new', fs.readFileSync(source), { mode: 420 });
-      fs.renameSync(target + '.new', target);
-      try { fs.chmodSync(target, 420); } catch (eMode) {}
-      problem = xrayAssets.checkFile(target, name);
-      if (problem) throw problem;
-      installed.push(name);
-    } catch (copyError) {
-      try { fs.unlinkSync(target + '.new'); } catch (eClean) {}
-      this.logger.warn('Xray asset install failed', { asset: name });
-    }
-  }
-  if (installed.length) this.logger.info('bundled Xray assets installed', { assets: installed.join(',') });
-  return installed;
-};
-
-/* Normalize an existing store in place. Reading and rewriting through the
-   store applies the current schema without losing any profile. */
-Migrator.prototype.migrateStore = function () {
-  var store = new storeLib.ProfileStore({ file: this.paths.storeFile, logger: this.logger });
-  var before, after;
-  if (!fileExists(this.paths.storeFile)) return { migrated: false, profiles: 0 };
-  before = atomic.readJson(this.paths.storeFile, null);
-  after = store.read();
-  /* Only rewrite when normalization actually changed something, so upgrades
-     do not churn the file needlessly. */
-  if (JSON.stringify(before) !== JSON.stringify(after)) {
-    store.write(after);
-    this.logger.info('profile store normalized', { profiles: after.profiles.length });
-    return { migrated: true, profiles: after.profiles.length };
-  }
-  return { migrated: false, profiles: after.profiles.length };
-};
-
-function readPid(file) {
-  var value;
-  try { value = String(fs.readFileSync(file, 'utf8')).trim(); } catch (e) { return 0; }
-  if (!/^[1-9]\d{0,9}$/.test(value)) return 0;
-  value = parseInt(value, 10);
-  return value > 1 ? value : 0;
-}
-
-/* Stop only processes proven to belong to this edition. A stale or malicious
-   PID file can never be used to signal an unrelated system process. */
-Migrator.prototype.stopLegacyProcesses = function () {
-  var entries = [
-    { file: 'alcyone-web.pid' },
-    { file: 'xray.pid' },
-    { file: 'sing-box.pid' },
-    { file: 'tun2socks.pid' },
-    { file: 'log-guard.pid' }
-  ];
-  var stopped = [], i, pid, command, matches;
-  var dataDir = String(this.paths.dataDir || '');
-  var appDir = String(this.paths.appDir || '');
-
-  for (i = 0; i < entries.length; i++) {
-    pid = readPid(path.join(dataDir, entries[i].file));
-    if (!pid) continue;
-    try {
-      command = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').replace(/\u0000/g, ' ');
-    } catch (eRead) {
-      continue;
-    }
-    matches = command.indexOf(dataDir) >= 0 || command.indexOf(appDir) >= 0;
-    if (!matches) {
-      this.logger.warn('ignored untrusted legacy pid', { file: entries[i].file });
-      continue;
-    }
-    try {
-      process.kill(pid, 'SIGTERM');
-      stopped.push(pid);
-      (function (legacyPid) {
-        setTimeout(function () {
-          try { process.kill(legacyPid, 0); process.kill(legacyPid, 'SIGKILL'); } catch (eGone) {}
-        }, 500);
-      })(pid);
-    } catch (eKill) {}
-  }
-  if (stopped.length) this.logger.info('legacy processes stopped', { count: stopped.length });
-  return stopped;
-};
-
-/* A service restart loses Supervisor's in-memory child table. Recover only
-   processes whose kernel-owned executable link is exactly one of this
-   edition's staged core files; command names, PID files and arguments alone
-   are never sufficient to signal a process. This runs before staged binaries
-   can be refreshed during an upgrade. */
-Migrator.prototype.stopOwnedCoreOrphans = function () {
-  var names = this.edition.core === 'sing-box' ? ['sing-box'] : ['xray', 'tun2socks'];
-  var expected = {};
-  var entries, stopped = [], i, pid, executable;
-  for (i = 0; i < names.length; i++) {
-    expected[path.join(this.paths.dataDir, 'bin', names[i])] = true;
+/* Best-effort raw byte copy used for pre-migration evidence. The backup is
+   a safety net for manual recovery, never an automatic restore source, so
+   a partial copy only costs information, never correctness. */
+function copyRawToFile(t, e) {
+  var r;
+  try {
+    r = fs.readFileSync(t);
+  } catch (t) {
+    return !1;
   }
   try {
-    entries = fs.readdirSync(this.procRoot);
-  } catch (readError) {
-    return stopped;
+    fs.writeFileSync(e, r, { mode: atomic.FILE_MODE });
+  } catch (t) {
+    return !1;
   }
-  for (i = 0; i < entries.length; i++) {
-    if (!/^[1-9]\d*$/.test(entries[i])) continue;
-    pid = parseInt(entries[i], 10);
-    if (!pid || pid === process.pid) continue;
+  try {
+    fs.chmodSync(e, atomic.FILE_MODE);
+  } catch (t) {}
+  return !0;
+}
+function Migrator(t) {
+  ((t = t || {}),
+    (this.paths = t.paths),
+    (this.edition = t.edition),
+    (this.logger = t.logger),
+    (this.procRoot = t.procRoot || "/proc"),
+    (this.procReadlink = t.procReadlink || fs.readlinkSync),
+    (this.kill = t.kill || process.kill),
+    (this.setTimeout = t.setTimeout || setTimeout),
+    (this.sharedPermissions = t.sharedPermissions || sharedPermissions));
+}
+function readPid(t) {
+  var e;
+  try {
+    e = String(fs.readFileSync(t, "utf8")).trim();
+  } catch (t) {
+    return 0;
+  }
+  return /^[1-9]\d{0,9}$/.test(e) && (e = parseInt(e, 10)) > 1 ? e : 0;
+}
+((Migrator.prototype.ensureLayout = function () {
+  var t = this.paths.dataDir;
+  return (
+    atomic.ensureOwnedDir(t),
+    atomic.ensureOwnedDir(path.join(t, "bin")),
+    atomic.ensureOwnedDir(path.dirname(this.paths.stateFile)),
+    !0
+  );
+}),
+  (Migrator.prototype.repairSharedDirectoryModes = function () {
+    var t = this.sharedPermissions.repair();
+    return (
+      t.repaired &&
+        t.repaired.length &&
+        this.logger.warn("shared directory permissions repaired", {
+          count: t.repaired.length,
+        }),
+      t
+    );
+  }),
+  (Migrator.prototype.installBundledCores = function () {
+    var t,
+      e,
+      i,
+      r,
+      s,
+      o,
+      n,
+      a = path.join(this.paths.appDir, "bin"),
+      p = path.join(this.paths.dataDir, "bin"),
+      l =
+        "sing-box" === this.edition.core ? ["sing-box"] : ["xray", "tun2socks", "alcyone-netguard"],
+      c = [];
+    for (t = 0; t < l.length; t++)
+      if (
+        ((e = path.join(a, l[t])),
+        (r = (i = path.join(p, l[t])) + ".new"),
+        fileExists(e))
+      ) {
+        if (((n = !0), fileExists(i)))
+          try {
+            ((s = fs.statSync(e)),
+              (o = fs.statSync(i)),
+              (n = s.size !== o.size || s.mtime.getTime() > o.mtime.getTime()));
+          } catch (t) {
+            n = !0;
+          }
+        if (n)
+          try {
+            try {
+              fs.unlinkSync(r);
+            } catch (t) {}
+            (fs.writeFileSync(r, fs.readFileSync(e), { mode: 493 }),
+              fs.renameSync(r, i));
+            try {
+              fs.chmodSync(i, 493);
+            } catch (t) {}
+            c.push(l[t]);
+          } catch (e) {
+            try {
+              fs.unlinkSync(r);
+            } catch (t) {}
+            this.logger.warn("core install failed", { core: l[t] });
+          }
+      }
+    return (
+      c.length &&
+        this.logger.info("bundled cores installed", { cores: c.join(",") }),
+      c
+    );
+  }),
+  (Migrator.prototype.installBundledXrayAssets = function () {
+    var t, e, i, r, s, o, n, a, p;
+    if ("xray" !== this.edition.core) return [];
+    for (
+      t = path.join(this.paths.appDir, "bin"),
+        e = path.join(this.paths.dataDir, "bin"),
+        i = Object.keys(xrayAssets.ASSETS).sort(),
+        r = [],
+        s = 0;
+      s < i.length;
+      s++
+    )
+      if (
+        ((o = i[s]),
+        (n = path.join(t, o)),
+        (a = path.join(e, o)),
+        (p = xrayAssets.checkFile(n, o)))
+      )
+        this.logger.warn("packaged Xray asset invalid", {
+          asset: o,
+          code: p.code,
+        });
+      else if (xrayAssets.checkFile(a, o))
+        try {
+          (fs.writeFileSync(a + ".new", fs.readFileSync(n), { mode: 420 }),
+            fs.renameSync(a + ".new", a));
+          try {
+            fs.chmodSync(a, 420);
+          } catch (t) {}
+          if ((p = xrayAssets.checkFile(a, o))) throw p;
+          r.push(o);
+        } catch (t) {
+          try {
+            fs.unlinkSync(a + ".new");
+          } catch (t) {}
+          this.logger.warn("Xray asset install failed", { asset: o });
+        }
+    return (
+      r.length &&
+        this.logger.info("bundled Xray assets installed", {
+          assets: r.join(","),
+        }),
+      r
+    );
+  }),
+  (Migrator.prototype.backupRawStore = function (t) {
+    var e,
+      i,
+      r,
+      s = path.join(this.paths.dataDir, "backups"),
+      o = String(Date.now()),
+      n = [];
+    atomic.ensureOwnedDir(s);
+    copyRawToFile(
+      this.paths.storeFile,
+      path.join(s, "profiles-" + o + "-" + t + ".json")
+    ) && n.push("profiles");
+    copyRawToFile(
+      this.paths.storeFile + ".tmp",
+      path.join(s, "profiles-" + o + "-tmp-" + t + ".json")
+    ) && n.push("tmp");
     try {
-      executable = this.procReadlink(path.join(this.procRoot, entries[i], 'exe'));
-    } catch (linkError) {
-      continue;
+      i = fs.readdirSync(s);
+    } catch (t) {
+      i = [];
     }
-    if (!expected[executable]) continue;
+    for (
+      r = i.filter(function (t) {
+          return /^profiles-.+\.json$/.test(t);
+        }).sort(),
+        e = 0;
+      e < r.length - STORE_BACKUP_KEEP;
+      e++
+    )
+      atomic.removeQuiet(path.join(s, r[e]));
+    return n;
+  }),
+  (Migrator.prototype.migrateStore = function () {
+    var t,
+      e,
+      i = new storeLib.ProfileStore({
+        file: this.paths.storeFile,
+        logger: this.logger,
+      });
+    if (!fileExists(this.paths.storeFile)) return { migrated: !1, profiles: 0 };
+    /* Evidence first: raw canonical and temp bytes are preserved before any
+       transformation, so no migration step can make user data unrecoverable. */
+    this.backupRawStore("pre-migration");
+    if (((t = atomic.readJsonStrict(this.paths.storeFile)), !t.ok))
+      throw errors.err(
+        "STORE_UNRECOVERABLE",
+        "profile store is corrupt; upgrade blocked, raw file preserved"
+      );
+    if ("tmp" === t.source)
+      try {
+        atomic.writeFileAtomic(
+          this.paths.storeFile,
+          JSON.stringify(t.value, null, 2)
+        );
+        this.logger.warn("profile store restored from interrupted write");
+      } catch (t) {
+        throw errors.err("STORE_WRITE_FAILED", "cannot restore store from tmp");
+      }
+    return (
+      (e = i.read()),
+      JSON.stringify(t.value) !== JSON.stringify(e)
+        ? (i.write(e),
+          this.logger.info("profile store normalized", {
+            profiles: e.profiles.length,
+          }),
+          { migrated: !0, profiles: e.profiles.length })
+        : { migrated: !1, profiles: e.profiles.length }
+    );
+  }),
+  (Migrator.prototype.removeUnsupportedSingboxProfiles = function () {
+    var t,
+      e,
+      i,
+      r,
+      s,
+      o,
+      n,
+      a,
+      p = [],
+      l = {},
+      c = !1,
+      h = 0;
+    if (!this.edition || "sing-box" !== this.edition.core)
+      return { marked: 0, profiles: 0 };
+    if (!fileExists(this.paths.storeFile)) return { marked: 0, profiles: 0 };
+    /* Profiles this edition cannot dial are MARKED, never deleted: the raw
+       links and full configs stay in the store so switching editions (or
+       rolling back the package) cannot lose user subscriptions. */
+    this.backupRawStore("pre-compat-mark");
+    for (
+      e = (t = new storeLib.ProfileStore({
+        file: this.paths.storeFile,
+        logger: this.logger,
+      })).read(),
+        i = 0;
+      i < e.profiles.length;
+      i++
+    ) {
+      s = e.profiles[i];
+      try {
+        subscriptionCompat.assertManualSupported(this.edition, s);
+        s.compatUnsupported &&
+          ((c = !0), delete s.compatUnsupported, delete s.compatReason);
+        p.push(s);
+      } catch (t) {
+        if (!subscriptionCompat.xhttpSkip(t)) {
+          p.push(s);
+          continue;
+        }
+        ((n =
+          t.meta && "object" == typeof t.meta
+            ? { code: t.code, transport: String(t.meta.transport || "") }
+            : { code: t.code, transport: "" }),
+          (!s.compatUnsupported ||
+            JSON.stringify(s.compatReason || {}) !== JSON.stringify(n)) &&
+            (c = !0),
+          (s.compatUnsupported = !0),
+          (s.compatReason = n),
+          h++,
+          s.subscriptionId &&
+            (l[s.subscriptionId] = (l[s.subscriptionId] || 0) + 1));
+      }
+    }
+    for (i = 0; i < e.subscriptions.length; i++) {
+      for (o = e.subscriptions[i], n = 0, r = 0; r < e.profiles.length; r++)
+        e.profiles[r].subscriptionId === o.id &&
+          !e.profiles[r].compatUnsupported &&
+          n++;
+      ((parseInt(o.count, 10) || 0) !== n && (c = !0),
+        (o.count = n),
+        l[o.id] &&
+          ((o.skippedReasons = subscriptionCompat.summarizeSkipped(l[o.id])),
+          (o.skippedCount = l[o.id])));
+    }
+    function firstSupportedId() {
+      var t;
+      for (t = 0; t < p.length; t++)
+        if (!p[t].compatUnsupported) return p[t].id;
+      return null;
+    }
+    for (a = !1, i = 0; i < e.profiles.length; i++)
+      e.profiles[i].id === e.activeId &&
+        !e.profiles[i].compatUnsupported &&
+        (a = !0);
+    a || ((e.activeId = firstSupportedId()), (c = !0));
+    if (e.autostartProfileId) {
+      for (
+        n = !1, i = 0;
+        i < e.profiles.length;
+        i++
+      )
+        e.profiles[i].id === e.autostartProfileId &&
+          (n = !e.profiles[i].compatUnsupported);
+      n || ((e.autostartProfileId = null), (c = !0));
+    }
+    return (
+      c
+        ? (t.write(e),
+          this.logger.info("unsupported sing-box profiles marked", {
+            count: h,
+          }))
+        : this.logger.info &&
+          this.logger.info("unsupported sing-box profiles checked", {
+            count: h,
+          }),
+      { marked: h, profiles: e.profiles.length }
+    );
+  }),
+  (Migrator.prototype.stopLegacyProcesses = function () {
+    var t,
+      e,
+      i,
+      r = [
+        { file: "alcyone-web.pid" },
+        { file: "xray.pid" },
+        { file: "sing-box.pid" },
+        { file: "tun2socks.pid" },
+        { file: "log-guard.pid" },
+      ],
+      s = [],
+      o = String(this.paths.dataDir || ""),
+      n = String(this.paths.appDir || "");
+    for (t = 0; t < r.length; t++)
+      if ((e = readPid(path.join(o, r[t].file)))) {
+        try {
+          i = fs
+            .readFileSync("/proc/" + e + "/cmdline", "utf8")
+            .replace(/\u0000/g, " ");
+        } catch (t) {
+          continue;
+        }
+        if (i.indexOf(o) >= 0 || i.indexOf(n) >= 0)
+          try {
+            (process.kill(e, "SIGTERM"),
+              s.push(e),
+              (function (t) {
+                setTimeout(function () {
+                  try {
+                    (process.kill(t, 0), process.kill(t, "SIGKILL"));
+                  } catch (t) {}
+                }, 500);
+              })(e));
+          } catch (t) {}
+        else
+          this.logger.warn("ignored untrusted legacy pid", { file: r[t].file });
+      }
+    return (
+      s.length &&
+        this.logger.info("legacy processes stopped", { count: s.length }),
+      s
+    );
+  }),
+  (Migrator.prototype.stopOwnedCoreOrphans = function () {
+    var t,
+      e,
+      i,
+      r,
+      s =
+        "sing-box" === this.edition.core ? ["sing-box"] : ["xray", "tun2socks", "alcyone-netguard"],
+      o = {},
+      n = [];
+    for (e = 0; e < s.length; e++)
+      o[path.join(this.paths.dataDir, "bin", s[e])] = !0;
     try {
-      this.kill(pid, 'SIGTERM');
-      stopped.push(pid);
-    } catch (killError) {}
-  }
-  if (stopped.length) this.logger.info('owned core orphans stopped', { count: stopped.length });
-  return stopped;
-};
-
-/* Convert the retired shell route.state into the JSON shape understood by the
-   new RouteManager. It is then rolled back by VpnManager.recover(). */
-Migrator.prototype.migrateLegacyRouteState = function () {
-  var file = this.paths.routeState;
-  var raw, parsed, values = {}, lines, i, match, addresses;
-  if (!fileExists(file)) return false;
-  parsed = atomic.readJson(file, null);
-  if (parsed && parsed.original) return false;
-  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { return false; }
-  lines = raw.split(/\r?\n/);
-  for (i = 0; i < lines.length; i++) {
-    match = /^([A-Z_]+)='([^']*)'$/.exec(lines[i].trim());
-    if (match) values[match[1]] = match[2];
-  }
-  if (!/^[A-Za-z0-9_.:-]+$/.test(values.ORIG_DEV || '')) {
-    atomic.removeQuiet(file);
-    return false;
-  }
-  if (values.ORIG_GW && !/^[0-9a-fA-F:.]+$/.test(values.ORIG_GW)) {
-    atomic.removeQuiet(file);
-    return false;
-  }
-  addresses = String(values.SERVER_IPS || values.SERVER_IP || '')
-    .split(/\s+/).filter(function (address) { return /^[0-9a-fA-F:.]+$/.test(address); });
-  atomic.writeJsonAtomic(file, {
-    original: {
-      gateway: values.ORIG_GW || '',
-      device: values.ORIG_DEV,
-      raw: ''
-    },
-    serverAddresses: addresses,
-    serverRoutes: {},
-    core: this.edition.core,
-    savedAt: Date.now(),
-    migratedLegacy: true
-  });
-  this.logger.info('legacy route state converted for rollback');
-  return true;
-};
-
-/* Remove artefacts of the retired shell-based implementation. Only files
-   inside this edition's own data directory are touched. */
-Migrator.prototype.cleanupLegacyArtifacts = function () {
-  var dataDir = this.paths.dataDir;
-  var stale = [
-    'alcyone-web.pid', 'xray.pid', 'sing-box.pid', 'tun2socks.pid',
-    'log-guard.pid', 'route.env', 'core-install.log'
-  ];
-  var removed = [], i;
-  for (i = 0; i < stale.length; i++) {
-    if (atomic.removeQuiet(path.join(dataDir, stale[i]))) removed.push(stale[i]);
-  }
-  if (removed.length) this.logger.info('legacy runtime files removed', { count: removed.length });
-  return removed;
-};
-
-Migrator.prototype.readState = function () {
-  return atomic.readJson(this.paths.stateFile, { migrationVersion: 0 });
-};
-
-Migrator.prototype.writeState = function (state) {
-  atomic.writeJsonAtomic(this.paths.stateFile, state);
-};
-
-/* Run every initialization step. Safe to call on each service start. */
-Migrator.prototype.run = function () {
-  var state = this.readState();
-  var summary;
-
-  this.ensureLayout();
-  this.stopLegacyProcesses();
-  this.stopOwnedCoreOrphans();
-  this.migrateLegacyRouteState();
-  this.installBundledCores();
-  this.installBundledXrayAssets();
-  summary = this.migrateStore();
-  this.cleanupLegacyArtifacts();
-
-  if (state.migrationVersion !== MIGRATION_VERSION) {
-    this.logger.info('migration applied', { from: state.migrationVersion || 0, to: MIGRATION_VERSION });
-  }
-  state.migrationVersion = MIGRATION_VERSION;
-  state.lastStart = Date.now();
-  state.edition = this.edition.id;
-  this.writeState(state);
-  return { migrationVersion: MIGRATION_VERSION, profiles: summary.profiles };
-};
-
-module.exports = {
-  MIGRATION_VERSION: MIGRATION_VERSION,
-  Migrator: Migrator
-};
+      t = fs.readdirSync(this.procRoot);
+    } catch (t) {
+      return n;
+    }
+    for (e = 0; e < t.length; e++)
+      if (
+        /^[1-9]\d*$/.test(t[e]) &&
+        (i = parseInt(t[e], 10)) &&
+        i !== process.pid
+      ) {
+        try {
+          r = this.procReadlink(path.join(this.procRoot, t[e], "exe"));
+        } catch (t) {
+          continue;
+        }
+        if (o[procExecutablePath(r)])
+          try {
+            (this.kill(i, "SIGTERM"),
+              n.push(i),
+              (function (t, e, i) {
+                var r = t.setTimeout(function () {
+                  var r;
+                  try {
+                    r = t.procReadlink(
+                      path.join(t.procRoot, String(e), "exe")
+                    );
+                  } catch (t) {
+                    return;
+                  }
+                  if (procExecutablePath(r) !== i) return;
+                  try {
+                    t.kill(e, "SIGKILL");
+                  } catch (t) {}
+                }, 500);
+                r && r.unref && r.unref();
+              })(this, i, procExecutablePath(r)));
+          } catch (t) {}
+      }
+    return (
+      n.length &&
+        this.logger.info("owned core orphans stopped", { count: n.length }),
+      n
+    );
+  }),
+  (Migrator.prototype.migrateLegacyRouteState = function () {
+    var t,
+      e,
+      i,
+      r,
+      s,
+      o,
+      n = this.paths.routeState,
+      a = {};
+    if (!fileExists(n)) return !1;
+    if ((e = atomic.readJson(n, null)) && e.original) return !1;
+    try {
+      t = fs.readFileSync(n, "utf8");
+    } catch (t) {
+      return !1;
+    }
+    for (i = t.split(/\r?\n/), r = 0; r < i.length; r++)
+      (s = /^([A-Z_]+)='([^']*)'$/.exec(i[r].trim())) && (a[s[1]] = s[2]);
+    return /^[A-Za-z0-9_.:-]+$/.test(a.ORIG_DEV || "")
+      ? a.ORIG_GW && !/^[0-9a-fA-F:.]+$/.test(a.ORIG_GW)
+        ? (atomic.removeQuiet(n), !1)
+        : ((o = String(a.SERVER_IPS || a.SERVER_IP || "")
+            .split(/\s+/)
+            .filter(function (t) {
+              return /^[0-9a-fA-F:.]+$/.test(t);
+            })),
+          atomic.writeJsonAtomic(n, {
+            original: { gateway: a.ORIG_GW || "", device: a.ORIG_DEV, raw: "" },
+            serverAddresses: o,
+            serverRoutes: {},
+            core: this.edition.core,
+            savedAt: Date.now(),
+            migratedLegacy: !0,
+          }),
+          this.logger.info("legacy route state converted for rollback"),
+          !0)
+      : (atomic.removeQuiet(n), !1);
+  }),
+  (Migrator.prototype.cleanupLegacyArtifacts = function () {
+    var t,
+      e = this.paths.dataDir,
+      i = [
+        "alcyone-web.pid",
+        "xray.pid",
+        "sing-box.pid",
+        "tun2socks.pid",
+        "log-guard.pid",
+        "route.env",
+        "core-install.log",
+      ],
+      r = [];
+    for (t = 0; t < i.length; t++)
+      atomic.removeQuiet(path.join(e, i[t])) && r.push(i[t]);
+    return (
+      r.length &&
+        this.logger.info("legacy runtime files removed", { count: r.length }),
+      r
+    );
+  }),
+  (Migrator.prototype.readState = function () {
+    return atomic.readJson(this.paths.stateFile, { migrationVersion: 0 });
+  }),
+  (Migrator.prototype.writeState = function (t) {
+    atomic.writeJsonAtomic(this.paths.stateFile, t);
+  }),
+  (Migrator.prototype.run = function () {
+    var t,
+      e = this.repairSharedDirectoryModes(),
+      i = this.readState();
+    return (
+      this.ensureLayout(),
+      this.stopLegacyProcesses(),
+      this.stopOwnedCoreOrphans(),
+      this.migrateLegacyRouteState(),
+      this.installBundledCores(),
+      this.installBundledXrayAssets(),
+      (t = this.migrateStore()),
+      "sing-box" === this.edition.core &&
+        i.migrationVersion !== MIGRATION_VERSION &&
+        (t = this.removeUnsupportedSingboxProfiles()),
+      this.cleanupLegacyArtifacts(),
+      i.migrationVersion !== MIGRATION_VERSION &&
+        this.logger.info("migration applied", {
+          from: i.migrationVersion || 0,
+          to: MIGRATION_VERSION,
+        }),
+      (i.migrationVersion = MIGRATION_VERSION),
+      (i.sharedPermissionsRepairVersion = e.version),
+      e.repaired &&
+        e.repaired.length &&
+        (i.lastSharedPermissionsRepair = Date.now()),
+      (i.lastStart = Date.now()),
+      (i.edition = this.edition.id),
+      this.writeState(i),
+      { migrationVersion: MIGRATION_VERSION, profiles: t.profiles }
+    );
+  }),
+  (module.exports = {
+    MIGRATION_VERSION: MIGRATION_VERSION,
+    Migrator: Migrator,
+  }));

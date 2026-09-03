@@ -1,6 +1,6 @@
 # Manual TV validation checklist
 
-**Status: PHYSICALLY VERIFIED — see `docs/MAINTAINER-AUDIT-FINAL.md`.**  
+**Status: 4.0.3 baseline physically verified; 4.2.0 automated qualification passes. The 4.2.0 long-duration and cross-version physical matrix remains a release gate.**
 The physical TV validation suite for Alcyone 4.0.3 was completed on the target hardware. Core installation, service registry refresh, root elevation, TUN interface creation, HTTPS data-plane routing, split default route installation, clean disconnect, route restoration, cross-edition tunnel locking, log redaction, and profile store hash preservation were physically exercised and verified. Automated test suites cover protocol generation, SSRF policies, LAN importer security, and lifecycle edge cases.
 
 Target hardware for physical verification:
@@ -8,6 +8,50 @@ Target hardware for physical verification:
 - LG 55UK6200PLA
 - webOS release 4.4.3-22
 - Both editions (`Alcyone-XRay_4.0.3_arm.ipk` and `Alcyone-sing-box_4.0.3_arm.ipk`), installed and exercised independently
+
+## 4.2.0 stability and compatibility release gates
+
+| # | Step | Expected | Result |
+| --- | --- | --- | --- |
+| 4.2.0-1 | Run each edition for 48 hours with streaming, idle periods, Wi-Fi reconnects, and suspend/resume | no monotonic FD/RSS leak; watchdog never leaves the system route on `tun0` after a fault | PENDING DEVICE |
+| 4.2.0-2 | Exhaust the core FD limit and separately hang the data plane | route policy is removed first, physical internet returns, one reconnect occurs after 60 seconds | PENDING DEVICE |
+| 4.2.0-3 | Repeat a watchdog incident within 30 minutes | circuit breaker opens and no reconnect loop occurs | PENDING DEVICE |
+| 4.2.0-4 | Qualify clean install, connect, disconnect, reboot autostart and Quick Start wake on webOS 4, 5, 6, 7, 8 and 9.2.2-62 | ConnectionManager variant or kernel fallback is reported; proxy endpoint never resolves through `tun0` | PENDING DEVICE MATRIX |
+| 4.2.0-5 | Boot with Wi-Fi DHCP delayed for 40 seconds and VPN previously disconnected | no connection-attempt budget is spent before two stable ready samples; configured autostart profile connects | PENDING DEVICE |
+| 4.2.0-6 | Navigate all autostart controls with D-Pad and exit the server picker with Back | Left returns to Settings/`rowAutostart`; Back returns exactly to `autostartChoose` | AUTOMATED; PHYSICAL PENDING |
+
+---
+
+## 4.1.0 filesystem-safety and boot qualification — do not publish before PASS
+
+Use a backed-up, disposable rooted webOS 4.4.x fixture. Record owner, group,
+mode, contents, installed-app inventory, YouTube/Lampa settings, and Homebrew
+repository configuration before the test. Do not mark a row PASS from an
+automated test: all rows below require the physical TV.
+
+| # | Step | Expected | Result |
+| --- | --- | --- | --- |
+| 4.1.0-1 | Record `/var/lib`, `/var/lib/webosbrew`, `/var/lib/webosbrew/init.d`, both Alcyone private directories, app inventory, YouTube/Lampa and Homebrew repository settings | baseline captured off-device | NOT RUN |
+| 4.1.0-2 | Upgrade an affected fixture with each allowlisted shared directory at exact `0700` | launching elevated 4.1.0 restores only those directories to `0755`; ownership and contents unchanged | NOT RUN |
+| 4.1.0-3 | Clean-install each edition with its private directory absent, connect once, and toggle autostart | private directory is `0700`; shared directory modes remain unchanged | NOT RUN |
+| 4.1.0-4 | Enable both editions' autostart hooks, arrange first hook dispatch before service registration, then reboot | bounded hook retry reaches the service and one selected edition reconnects | NOT RUN |
+| 4.1.0-5 | Repeat after a full reboot and after a 15-minute power-off | autostart reconnects; YouTube, Lampa, installed apps, and Homebrew repositories/settings remain intact | NOT RUN |
+| 4.1.0-6 | Observe connect, failed connect, disconnect, and restart in Russian and English | primary status uses only Off → Connecting to server → Connected; no ellipsis or flicker | NOT RUN |
+
+---
+
+## 4.1.5 autostart, timeout, and Magic Remote matrix — physical validation pending
+
+Run this matrix on webOS 4.4.0 when a device is available. The local bundle
+does not claim these rows as physically verified.
+
+| # | Step | Expected | Result |
+| --- | --- | --- | --- |
+| 4.1.5-1 | Capture raw boot-hook/Luna responses before the fix, with configuration data redacted | `{queued:true, started:false}` is observed before the delayed connection attempt | PENDING DEVICE |
+| 4.1.5-2 | Configure autostart with VPN disconnected, Quick Start on and off | server can be selected without connecting now; next boot promotes that profile | PENDING DEVICE |
+| 4.1.5-3 | Repeat with normal and delayed network, and restart the service during hook retries | hook keeps retrying and exits only after `started:true` | PENDING DEVICE |
+| 4.1.5-4 | Connect to a deliberately unavailable endpoint | within 40 seconds the UI is usable, shows a localized timeout, and allows retry/server change | PENDING DEVICE |
+| 4.1.5-5 | Select rows with Magic Remote at top, middle, and bottom of a long filtered list | row DOM/focus and exact viewport scroll remain stable | PENDING DEVICE |
 
 ---
 

@@ -56,14 +56,44 @@ header span{font-size:15px;color:#837b9e;margin-left:16px}
 .homeStage>*{margin-top:0}
 .homeStage>*+*{margin-top:18px}
 .homeStage>.power+.homeState{margin-top:32px}
-.power{width:184px;height:184px;border-radius:50%;background:#120d22;border:5px solid #33285a;box-shadow:0 0 0 14px rgba(139,92,246,.08),0 0 78px 24px rgba(91,62,153,.12);display:inline-flex;align-items:center;justify-content:center;transition:border-color .2s,box-shadow .2s}
+.power{width:184px;height:184px;border-radius:50%;background:#120d22;border:5px solid #33285a;box-shadow:none;display:inline-flex;align-items:center;justify-content:center;transition:border-color .18s cubic-bezier(.2,.8,.2,1),background-color .18s cubic-bezier(.2,.8,.2,1),transform .18s cubic-bezier(.2,.8,.2,1);position:relative;isolation:isolate}
+/* Keep the familiar breathing halo, but move the one blur to a pseudo-element
+   so the large button itself never repaints a shadow on every frame.  The
+   explicit stack level keeps the halo visible on Chromium 68/webOS 5. */
+.power:before{content:"";position:absolute;z-index:0;top:-11px;right:-11px;bottom:-11px;left:-11px;border:3px solid rgba(139,92,246,.34);border-radius:50%;background:transparent;box-shadow:0 0 62px 16px rgba(91,62,153,.16);opacity:.28;transform:scale(.96);animation:none;pointer-events:none}
+/* The action ring is deliberately independent from the ambient halo.  It is
+   always present, so focus, press, and busy state changes never pop in or out
+   when Chromium changes the button's native state. */
+.power:after{content:"";position:absolute;z-index:0;top:-20px;right:-20px;bottom:-20px;left:-20px;border:3px solid #b18cff;border-radius:50%;box-shadow:0 0 0 7px rgba(139,92,246,.11),0 0 26px rgba(139,92,246,.30);opacity:0;transform:scale(.965);transition:opacity .22s ease-out,transform .22s ease-out;pointer-events:none}
+.power>*{position:relative;z-index:1}
 .power img{width:84px;height:84px}
 .power .pw-on{display:none}
-.power.on{border-color:#a78bfa;background:#191139;box-shadow:0 0 0 14px rgba(139,92,246,.16),0 0 100px 34px rgba(167,139,250,.25)}
+.power.on{border-color:#a78bfa;background:#191139}
+.power.on:before{border-color:rgba(167,139,250,.62);box-shadow:0 0 76px 20px rgba(167,139,250,.28);opacity:.5}
+.power:hover:after,.power:focus:after{opacity:1;transform:scale(1);transition-duration:.18s;transition-timing-function:cubic-bezier(.2,.8,.2,1)}
+.power:focus:before{animation:powerRing 1.8s ease-in-out infinite}
+.power.on:focus:before{animation-name:powerRingOn;opacity:.95}
+.power.busy:before{animation:none;opacity:.5}
+.power.on.busy:before{animation:none;opacity:.78}
+.power.busy:after{opacity:.70;transform:scale(.992);transition-duration:.18s;transition-timing-function:cubic-bezier(.2,.8,.2,1)}
+/* The short completion class makes the busy ring release into the ordinary
+   focused/connected state instead of snapping when the Luna callback lands. */
+.power.settling:after{transition-duration:.26s;transition-timing-function:cubic-bezier(.2,.8,.2,1)}
 .power.on .pw-off{display:none}
 .power.on .pw-on{display:inline-block}
-.power:focus{outline:none;box-shadow:0 0 0 4px #b18cff,0 0 0 18px rgba(139,92,246,.10),0 0 88px 26px rgba(91,62,153,.15)}
-.power.on:focus{box-shadow:0 0 0 4px #b18cff,0 0 0 18px rgba(139,92,246,.16),0 0 105px 36px rgba(167,139,250,.27)}
+.power:focus{outline:none}
+.power:active,.power.pressed{transform:scale(.97);transition-duration:.09s;transition-timing-function:cubic-bezier(.2,.8,.2,1)}
+.power:active:after,.power.pressed:after{opacity:.82;transform:scale(.99);transition-duration:.09s}
+.power .powerLoader{display:none;position:absolute;z-index:2;top:-18px;right:-18px;bottom:-18px;left:-18px;border:3px solid rgba(177,140,255,.20);border-top-color:#d9c9ff;border-right-color:#9c7be8;border-radius:50%;pointer-events:none}
+.power.busy .powerLoader{display:block;-webkit-animation:powerLoaderSpin .9s linear infinite;animation:powerLoaderSpin .9s linear infinite}
+.power:disabled{cursor:default;opacity:.55}
+.power:disabled:before{animation:none}
+.power.on:disabled:before{animation:none}
+.power:disabled:after{opacity:0;animation:none}
+@keyframes powerRing{0%,100%{opacity:.35;transform:scale(.96)}50%{opacity:.95;transform:scale(1.03)}}
+@keyframes powerRingOn{0%,100%{opacity:.60;transform:scale(.98)}50%{opacity:1;transform:scale(1.04)}}
+@-webkit-keyframes powerLoaderSpin{from{-webkit-transform:rotate(0deg);transform:rotate(0deg)}to{-webkit-transform:rotate(360deg);transform:rotate(360deg)}}
+@keyframes powerLoaderSpin{from{-webkit-transform:rotate(0deg);transform:rotate(0deg)}to{-webkit-transform:rotate(360deg);transform:rotate(360deg)}}
 .homeState{color:#b7aecb;font-size:27px;font-weight:700}
 .homeState.on{color:#e7dbff}
 #hint{color:#837b9e;font-size:15px}
@@ -98,6 +128,9 @@ input:focus{outline:none;border-color:#b18cff;box-shadow:inset 0 0 0 2px rgba(17
 .tools button:hover{border-color:#b18cff}
 .tools button:focus{outline:none;box-shadow:inset 0 0 0 3px #b18cff,0 0 0 1px rgba(177,140,255,.45)}
 .tools button:disabled{cursor:default;opacity:.6;border-color:#322656}
+#pingServers.busy{position:relative;padding-right:42px}
+#pingServers.busy:after{content:"";position:absolute;right:18px;top:50%;width:9px;height:9px;margin-top:-5px;border-radius:50%;background:#b18cff;opacity:.45;transform:scale(.72);animation:toolbarProbePulse 1.1s ease-in-out infinite alternate;pointer-events:none}
+@keyframes toolbarProbePulse{from{opacity:.35;transform:scale(.72)}to{opacity:1;transform:scale(1)}}
 .listOptions{display:flex;align-items:center;margin-bottom:18px;flex-wrap:wrap}
 .chips{display:flex;flex:1;flex-wrap:wrap;padding:6px 0 6px 6px;overflow:visible}
 .chip{padding:10px 22px;border-radius:999px;border:1px solid #322656;background:#151027;color:#9d95b5;font-size:15px;font-weight:600;min-width:86px}
@@ -113,6 +146,7 @@ input:focus{outline:none;border-color:#b18cff;box-shadow:inset 0 0 0 2px rgba(17
 .sortBtn.active{position:relative;z-index:1;background:#2b1e4c;border-color:#6d51a4;color:#d8c8f8}
 .sortBtn:focus{position:relative;outline:none;box-shadow:inset 0 0 0 3px #b18cff,0 0 0 1px rgba(177,140,255,.45)}
 .list{display:flex;flex-direction:column;padding:4px 8px 30px 8px}
+.listSpacer{display:block;flex:0 0 auto;pointer-events:none}
 .group{margin-bottom:4px}
 .groupHead{display:flex;align-items:baseline;padding:2px 6px 12px}
 .groupHead .gname{color:#b18cff;font-weight:700;font-size:19px}
@@ -133,8 +167,6 @@ input:focus{outline:none;border-color:#b18cff;box-shadow:inset 0 0 0 2px rgba(17
 .pingCell.poor,.pingCell.unavailable{color:#ff657c}
 .pingCell.unavailable .pingDot{opacity:.55;box-shadow:none}
 .pingCell.pending{color:#6f6790}
-.pingCell.pending .pingDot{background:#8d6cdd;animation:pingPulse 1s ease-in-out infinite}
-@keyframes pingPulse{0%,100%{opacity:.35}50%{opacity:1}}
 .rowActions{display:flex;flex:0 0 auto;margin-left:0;padding-right:2px}
 .rowActions button{border-radius:11px;padding:12px 18px;min-width:118px;min-height:46px;font-size:15px;font-weight:600;line-height:1.15;border:1px solid #4a3670;background:#241a3d;color:#cdb6ff}
 .rowActions button + button{margin-left:22px}
@@ -158,6 +190,58 @@ input:focus{outline:none;border-color:#b18cff;box-shadow:inset 0 0 0 2px rgba(17
 .rChev{width:26px;height:26px;flex:0 0 26px;margin-left:20px}
 .row:hover{border-color:#b18cff}
 .row:focus{outline:none;box-shadow:inset 0 0 0 3px #b18cff,0 0 0 1px rgba(177,140,255,.45)}
+
+/* ---------- autostart settings and picker ---------- */
+#servers>header{position:relative}
+.serverPickerBack{display:none;position:absolute;left:0;top:50%;transform:translateY(-50%)}
+.serverPickerHint{display:none;margin:0 4px 14px;color:#9f92bf;font-size:15px;text-align:center}
+#servers.autostartPicker>header{padding-left:142px;padding-right:142px;justify-content:center}
+#servers.autostartPicker #serversHeaderSub{color:#837b9e}
+#servers.autostartPicker #serverPickerBack,#servers.autostartPicker #serverPickerHint{display:block}
+#servers.autostartPicker #serversTools,#servers.autostartPicker #serversFilters{display:none}
+#servers.autostartPicker .card{cursor:pointer;min-height:82px;padding:16px 22px}
+#servers.autostartPicker .card .flag{margin-right:20px}
+#servers.autostartPicker .serverTitle{font-size:19px;line-height:1.35;padding-right:18px}
+#servers.autostartPicker .pickerMark{position:relative;display:block;-webkit-flex:0 0 38px;flex:0 0 38px;width:38px;height:38px;margin-left:22px;border:2px solid #44355f;border-radius:50%;background:#171129;transition:border-color .15s ease,background-color .15s ease}
+#servers.autostartPicker .pickerMark span{position:absolute;left:50%;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#b18cff;opacity:0;transform:scale(.55);transition:opacity .15s ease,transform .15s ease}
+#servers.autostartPicker .card.active .pickerMark{border-color:#b18cff;background:#21183a}
+#servers.autostartPicker .card.active .pickerMark span{opacity:1;transform:scale(1)}
+#servers.autostartPicker .card:focus .pickerMark{border-color:#d3bcff}
+.autostartEditor{width:100%;max-width:900px;margin:18px auto 0;background:#131024;border:1px solid #2a2145;border-radius:20px;overflow:hidden}
+.autostartPanel{padding:28px 34px 30px}
+.autostartPanelHeader{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:space-between;justify-content:space-between;padding:0 0 22px;border-bottom:1px solid #2a2145}
+.autostartEyebrow{display:block;color:#9a92b3;font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.autostartPanelHeader .statePill{-webkit-flex:0 0 auto;flex:0 0 auto;margin-left:20px}
+.autostartPanel .switchRow{padding:22px 0}
+.autostartServer{display:block;min-height:28px;margin-top:6px;color:#eee8fa}
+.autostartServerEmpty{display:block;color:#837b9e;font-size:17px;line-height:1.4}
+.autostartServerName{display:block;color:#efeaf8;font-size:21px;font-weight:700;line-height:1.35;overflow-wrap:break-word;word-wrap:break-word}
+.autostartServerRow{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;width:100%;padding:20px 0 4px;border:0;background:transparent;color:#eee8fa;text-align:left;font-family:inherit}
+.autostartServerRow:hover .autostartServerName{color:#e4d5ff}
+.autostartServerRow:focus{outline:none}
+.autostartServerRow:focus .rChev{filter:brightness(1.35)}
+.autostartServerRow:focus .autostartServerRowBody{box-shadow:inset 0 0 0 3px #b18cff}
+.autostartServerRow:disabled{cursor:default;opacity:.55}
+.autostartServerRowBody{display:block;-webkit-flex:1;flex:1;min-width:0;padding:10px 14px;border-radius:12px;box-shadow:inset 0 0 0 1px #3c2c66;transition:box-shadow .15s ease}
+.autostartServerLabel{display:block;color:#837b9e;font-size:14px;font-weight:600;line-height:1.3}
+.autostartServerRow .rChev{width:26px;height:26px;-webkit-flex:0 0 26px;flex:0 0 26px;margin-left:20px}
+.autostartForm{width:100%;padding:30px 34px;min-width:0}
+.switchRow{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;width:100%;padding:0 0 20px;border:0;border-bottom:1px solid #2a2145;background:transparent;color:#eee8fa;text-align:left;font-family:inherit}
+.switchRow:disabled{cursor:default;opacity:.55}
+.switchRow:focus{outline:none}
+.switchRow:focus .tvSwitch{box-shadow:0 0 0 3px #b18cff}
+.switchBody{-webkit-flex:1;flex:1;min-width:0}
+.switchBody b{display:block;font-size:17px}
+.switchBody small{display:block;margin-top:7px;color:#837b9e;font-size:14px;line-height:1.4}
+.tvSwitch{position:relative;display:block;width:58px;height:32px;flex:0 0 58px;margin-left:20px;border:1px solid #4a3670;border-radius:999px;background:#1c1433}
+.tvSwitch span{position:absolute;left:4px;top:4px;width:22px;height:22px;border-radius:50%;background:#837b9e;transition:transform .15s ease,background .15s ease}
+.switchRow[aria-checked="true"] .tvSwitch{background:#b18cff;border-color:#d3bcff}
+.switchRow[aria-checked="true"] .tvSwitch span{background:#170e2e;transform:translateX(26px)}
+.autostartHelper{margin:10px 46px 0 0;color:#837b9e;font-size:14px;line-height:1.45}
+.autostartStatus{min-height:0;margin-top:12px;color:#c9b6ff;font-size:15px;line-height:1.4}
+@media (max-width:1200px){
+  .autostartEditor{max-width:820px}
+}
 
 /* ---------- подстраницы: общий центрированный заголовок ---------- */
 .subpageHeader{position:relative;align-items:center;justify-content:center;flex-wrap:nowrap;padding:0 150px}
@@ -201,6 +285,26 @@ pre:focus{outline:none;border-color:#b18cff;box-shadow:inset 0 0 0 3px #b18cff,0
 .pairExpiry{margin-top:18px;color:#9a92b3;font-size:17px}
 .pairWarn{margin-top:18px;color:#9a92b3;font-size:15px;line-height:1.45;max-width:760px}
 
+/* Keep the DNS editor to Flexbox primitives supported by Chromium 53 on
+   webOS 4.  Its saved-state summary stays separate from the editable draft. */
+.dnsEditor{width:100%;max-width:980px;margin:18px auto 0;background:#131024;border:1px solid #2a2145;border-radius:20px;padding:0;display:-webkit-flex;display:flex;-webkit-align-items:stretch;align-items:stretch;overflow:hidden}
+.dnsSummary{width:40%;-webkit-flex:0 0 40%;flex:0 0 40%;padding:32px 30px;background:#100c1e;border-right:1px solid #2a2145;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;-webkit-justify-content:flex-start;justify-content:flex-start;min-height:246px}
+.dnsEyebrow{display:block;color:#9a92b3;font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.dnsModeValue{display:block;margin-top:13px;color:#eee8fa;font-size:23px;line-height:1.35;overflow-wrap:anywhere;word-wrap:break-word}
+.dnsModeHint{display:block;margin-top:15px;color:#837b9e;font-size:14px;line-height:1.45}
+.dnsForm{width:60%;-webkit-flex:1 1 60%;flex:1 1 60%;padding:30px 34px;min-width:0}
+.dnsForm label{display:block;color:#cfc5e8;font-size:16px;font-weight:600;margin-bottom:11px}
+.dnsForm input{display:block;width:100%;min-width:0;margin:0}
+.dnsHelper{margin:10px 0 0;color:#837b9e;font-size:14px;line-height:1.45}
+.dnsActions{margin:22px 0 0;display:flex;align-items:center;flex-wrap:wrap}
+/* Keep both actions on one deliberate row at TV widths. The shared toolbar
+   rule adds a second margin to adjacent buttons, which made the long
+   automatic-DNS action wrap and appear indented on the DNS page. */
+.dnsActions button{margin:0 14px 0 0;white-space:nowrap}
+.dnsActions button + button{margin-left:0}
+.dnsStatus{max-height:0;margin:0;padding:0;border:0;overflow:hidden;color:#c9b6ff;font-size:15px;line-height:1.4;opacity:0;transform:translateY(-4px);transition:max-height .18s ease-out,margin-top .18s ease-out,opacity .18s ease-out,transform .18s ease-out}
+.dnsStatus.is-visible{max-height:80px;margin-top:17px;opacity:1;transform:translateY(0)}
+
 @media (max-width:1500px){
   #app{padding:28px 36px}
   aside{width:258px;min-width:258px;margin-right:32px}
@@ -233,6 +337,8 @@ pre:focus{outline:none;border-color:#b18cff;box-shadow:inset 0 0 0 3px #b18cff,0
   .homeInfo{flex:0 0 auto;max-width:900px;margin-top:32px;padding:0;justify-content:flex-start}
   .homeStage>*+*{margin-top:32px}
   .homeStage>.power+.homeState{margin-top:48px}
+  .modeOption{min-width:148px;padding:10px 24px;font-size:17px}
+  .modeOption:last-child{min-width:190px}
   .power{width:260px;height:260px;border-width:7px}
   .power img{width:120px;height:120px}
   .homeState{font-size:34px}
@@ -247,4 +353,15 @@ pre:focus{outline:none;border-color:#b18cff;box-shadow:inset 0 0 0 3px #b18cff,0
   .webbox b{font-size:24px}
   .homeWebBody>span{margin-top:12px;padding:9px 16px;font-size:22px}
   .webbox small{max-width:760px;margin-top:11px;font-size:20px}
+}
+
+@media (max-width:960px){
+  .dnsEditor{-webkit-flex-direction:column;flex-direction:column}
+  .dnsSummary,.dnsForm{width:100%;-webkit-flex:none;flex:none}
+  .dnsSummary{min-height:0;padding:25px 28px;border-right:0;border-bottom:1px solid #2a2145}
+  .dnsForm{padding:26px 28px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .power,.power:after,.power:before,.powerLoader,.dnsStatus{transition-duration:1ms!important;-webkit-animation:none!important;animation:none!important}
 }

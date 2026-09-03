@@ -1,378 +1,605 @@
-'use strict';
-
-/* Xray configuration builder (XRay Edition).
-
-   Config generation used to live in the TV frontend, which then shipped the
-   JSON to a shell command. It now runs inside the service: the frontend never
-   sees profile secrets and never constructs a command line.
-
-   Full user-supplied Xray configurations are preserved verbatim apart from the
-   inbound, which is pinned to a loopback SOCKS listener, and a leading routing
-   rule that keeps private destinations off the tunnel. XHTTP transports and
-   balancers therefore keep working. */
-
-var parsers = require('../proto/parsers');
-var errors = require('../errors');
-var err = errors.err;
-
-var SOCKS_PORT = 10801;
-var PRIVATE_RANGES = [
-  '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16',
-  '172.16.0.0/12', '192.168.0.0/16', '224.0.0.0/4', '240.0.0.0/4',
-  '::1/128', 'fc00::/7', 'fe80::/10'
-];
-
-function isObject(value) {
-  return !!value && typeof value === 'object' && Object.prototype.toString.call(value) !== '[object Array]';
+"use strict";
+var parsers = require("../proto/parsers"),
+  errors = require("../errors"),
+  err = errors.err,
+  SOCKS_PORT = 10801,
+  HTTP_PORT = 10802,
+  DNS_OUTBOUND_TAG = "alcyone-dns",
+  PRIVATE_RANGES = [
+    "0.0.0.0/8",
+    "10.0.0.0/8",
+    "100.64.0.0/10",
+    "127.0.0.0/8",
+    "169.254.0.0/16",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "224.0.0.0/4",
+    "240.0.0.0/4",
+    "::1/128",
+    "fc00::/7",
+    "fe80::/10",
+  ];
+function isObject(t) {
+  return (
+    !!t &&
+    "object" == typeof t &&
+    "[object Array]" !== Object.prototype.toString.call(t)
+  );
 }
-function isArray(value) {
-  return Object.prototype.toString.call(value) === '[object Array]';
+function isArray(t) {
+  return "[object Array]" === Object.prototype.toString.call(t);
 }
-function own(object, key) {
-  return Object.prototype.hasOwnProperty.call(object, key);
+function own(t, e) {
+  return Object.prototype.hasOwnProperty.call(t, e);
 }
-function canonicalHost(host) {
-  return String(host || '').toLowerCase();
+function canonicalHost(t) {
+  return String(t || "").toLowerCase();
 }
-
-function buildStreamSettings(p, fallbackHost, defSecurity) {
-  var security = String(p.security || defSecurity || 'none').toLowerCase();
-  var network = String(p.type || p.network || 'tcp').toLowerCase();
-  var stream;
-  if (network === 'h2') network = 'http';
-  if (network === 'xhttp' || network === 'splithttp') network = 'xhttp';
-  stream = { network: network, security: security === 'reality' ? 'reality' : (security === 'tls' ? 'tls' : 'none') };
-
-  if (stream.security === 'reality') {
-    stream.realitySettings = {
-      serverName: p.sni || p.serverName || fallbackHost,
-      fingerprint: p.fp || 'chrome',
-      publicKey: p.pbk || '',
-      shortId: p.sid || '',
-      spiderX: p.spx || '/'
-    };
-  } else if (stream.security === 'tls') {
-    stream.tlsSettings = {
-      serverName: p.sni || p.serverName || fallbackHost,
-      allowInsecure: p.allowInsecure === '1' || p.allowInsecure === 'true' || parsers.truthy(p.insecure)
-    };
-    if (p.alpn) stream.tlsSettings.alpn = String(p.alpn).split(',').filter(Boolean);
-    if (p.fp) stream.tlsSettings.fingerprint = p.fp;
-  }
-
-  if (network === 'ws') {
-    stream.wsSettings = { path: p.path || '/', headers: {} };
-    if (p.host) stream.wsSettings.headers.Host = p.host;
-  } else if (network === 'grpc') {
-    stream.grpcSettings = { serviceName: p.serviceName || '' };
-  } else if (network === 'http') {
-    stream.httpSettings = {};
-    if (p.host) stream.httpSettings.host = String(p.host).split(',').filter(Boolean);
-    if (p.path) stream.httpSettings.path = p.path;
-  } else if (network === 'xhttp') {
-    stream.xhttpSettings = { path: p.path || '/', mode: p.mode || 'auto' };
-    if (p.host) stream.xhttpSettings.host = p.host;
-    if (p.extra) { try { stream.xhttpSettings.extra = JSON.parse(p.extra); } catch (e) {} }
-    if (p.noGRPCHeader === '1' || p.noGRPCHeader === 'true') stream.xhttpSettings.noGRPCHeader = true;
-  } else if (network === 'httpupgrade') {
-    stream.httpupgradeSettings = { path: p.path || '/', headers: {} };
-    if (p.host) stream.httpupgradeSettings.headers.Host = p.host;
-  }
-  return stream;
+function buildStreamSettings(t, e, r) {
+  var s,
+    o = String(t.security || r || "none").toLowerCase(),
+    n = String(t.type || t.network || "tcp").toLowerCase();
+  if (
+    ("h2" === n && (n = "http"),
+    ("xhttp" !== n && "splithttp" !== n) || (n = "xhttp"),
+    "reality" ===
+    (s = {
+      network: n,
+      security: "reality" === o ? "reality" : "tls" === o ? "tls" : "none",
+    }).security
+      ? (s.realitySettings = {
+          serverName: t.sni || t.serverName || e,
+          fingerprint: t.fp || "chrome",
+          publicKey: t.pbk || "",
+          shortId: t.sid || "",
+          spiderX: t.spx || "/",
+        })
+      : "tls" === s.security &&
+        ((s.tlsSettings = {
+          serverName: t.sni || t.serverName || e,
+          allowInsecure:
+            "1" === t.allowInsecure ||
+            "true" === t.allowInsecure ||
+            parsers.truthy(t.insecure),
+        }),
+        t.alpn &&
+          (s.tlsSettings.alpn = String(t.alpn).split(",").filter(Boolean)),
+        t.fp && (s.tlsSettings.fingerprint = t.fp)),
+    "ws" === n)
+  )
+    ((s.wsSettings = { path: t.path || "/", headers: {} }),
+      t.host && (s.wsSettings.headers.Host = t.host));
+  else if ("grpc" === n) s.grpcSettings = { serviceName: t.serviceName || "" };
+  else if ("http" === n)
+    ((s.httpSettings = {}),
+      t.host &&
+        (s.httpSettings.host = String(t.host).split(",").filter(Boolean)),
+      t.path && (s.httpSettings.path = t.path));
+  else if ("xhttp" === n) {
+    if (
+      ((s.xhttpSettings = { path: t.path || "/", mode: t.mode || "auto" }),
+      t.host && (s.xhttpSettings.host = t.host),
+      t.extra)
+    )
+      try {
+        s.xhttpSettings.extra = JSON.parse(t.extra);
+      } catch (t) {}
+    ("1" !== t.noGRPCHeader && "true" !== t.noGRPCHeader) ||
+      (s.xhttpSettings.noGRPCHeader = !0);
+  } else
+    "httpupgrade" === n &&
+      ((s.httpupgradeSettings = { path: t.path || "/", headers: {} }),
+      t.host && (s.httpupgradeSettings.headers.Host = t.host));
+  return s;
 }
-
-function outboundFor(profile) {
-  var parsed = parsers.parseProxyLink(profile.link);
-  var p = parsed.params || {};
-  var hp, tls, alpn, hyst, settings, stream, obfsType, obfsPassword, srv, vu, user;
-
-  if (parsed.protocol === 'hysteria2') {
-    hp = p;
-    tls = {
-      serverName: hp.sni || hp.peer || hp.serverName || hp.servername || parsed.host,
-      allowInsecure: parsers.truthy(hp.insecure || hp.allowInsecure || hp['skip-cert-verify'])
-    };
-    alpn = hp.alpn ? String(hp.alpn).split(',').filter(Boolean) : ['h3'];
-    if (alpn.length) tls.alpn = alpn;
-    if (hp.fp || hp.fingerprint) tls.fingerprint = hp.fp || hp.fingerprint;
-    hyst = { version: 2, auth: parsed.password };
-    stream = { network: 'hysteria', security: 'tls', hysteriaSettings: hyst, tlsSettings: tls };
-    if (hp.obfs) {
-      /* Hysteria2's Salamander obfuscation is a FinalMask UDP layer in XRay,
-         not a hysteriaSettings field. Emitting the old shape silently produced
-         a config that could not interoperate with obfuscated Hysteria2 servers. */
-      obfsType = String(hp.obfs).toLowerCase();
-      obfsPassword = hp['obfs-password'] || hp.obfsPassword || hp.obfs_password;
-      if (obfsType !== 'salamander' || !obfsPassword) {
-        throw err('UNSUPPORTED_TRANSPORT', 'only Hysteria2 Salamander obfuscation is supported');
-      }
-      stream.finalmask = {
-        udp: [{ type: 'salamander', settings: { password: String(obfsPassword) } }]
+function outboundFor(t) {
+  var e,
+    r,
+    s,
+    o,
+    n,
+    i,
+    l,
+    a,
+    p,
+    u = parsers.parseProxyLink(t.link),
+    d = u.params || {};
+  if ("hysteria2" === u.protocol) {
+    if (
+      ((r = {
+        serverName:
+          (e = d).sni || e.peer || e.serverName || e.servername || u.host,
+        allowInsecure: parsers.truthy(
+          e.insecure || e.allowInsecure || e["skip-cert-verify"]
+        ),
+      }),
+      (s = e.alpn ? String(e.alpn).split(",").filter(Boolean) : ["h3"])
+        .length && (r.alpn = s),
+      (e.fp || e.fingerprint) && (r.fingerprint = e.fp || e.fingerprint),
+      (o = {
+        network: "hysteria",
+        security: "tls",
+        hysteriaSettings: { version: 2, auth: u.password },
+        tlsSettings: r,
+      }),
+      e.obfs)
+    ) {
+      if (
+        ((n = String(e.obfs).toLowerCase()),
+        (i = e["obfs-password"] || e.obfsPassword || e.obfs_password),
+        "salamander" !== n || !i)
+      )
+        throw err(
+          "UNSUPPORTED_TRANSPORT",
+          "only Hysteria2 Salamander obfuscation is supported"
+        );
+      o.finalmask = {
+        udp: [{ type: "salamander", settings: { password: String(i) } }],
       };
     }
-    settings = { version: 2, address: parsed.host, port: parsed.port };
     return {
-      protocol: 'hysteria', tag: 'proxy', settings: settings,
-      streamSettings: stream
+      protocol: "hysteria",
+      tag: "proxy",
+      settings: { version: 2, address: u.host, port: u.port },
+      streamSettings: o,
     };
   }
-  if (parsed.protocol === 'ss') {
-    return {
-      protocol: 'shadowsocks', tag: 'proxy',
-      settings: { servers: [{ address: parsed.host, port: parsed.port, method: parsed.method, password: parsed.password }] }
-    };
-  }
-  if (parsed.protocol === 'socks') {
-    srv = { address: parsed.host, port: parsed.port };
-    if (parsed.user) srv.users = [{ user: parsed.user, pass: parsed.pass || '' }];
-    return { protocol: 'socks', tag: 'proxy', settings: { servers: [srv] } };
-  }
-  if (parsed.protocol === 'trojan') {
-    return {
-      protocol: 'trojan', tag: 'proxy',
-      settings: { servers: [{ address: parsed.host, port: parsed.port, password: parsed.password }] },
-      streamSettings: buildStreamSettings(p, parsed.host, 'tls')
-    };
-  }
-  if (parsed.protocol === 'vmess') {
-    vu = { id: parsed.uuid, alterId: parsed.aid || 0, security: parsed.scy || 'auto' };
-    return {
-      protocol: 'vmess', tag: 'proxy',
-      settings: { vnext: [{ address: parsed.host, port: parsed.port, users: [vu] }] },
-      streamSettings: buildStreamSettings(p, parsed.host, 'none')
-    };
-  }
-  user = { id: parsed.uuid, encryption: 'none' };
-  if (p.flow) user.flow = p.flow;
-  return {
-    protocol: 'vless', tag: 'proxy',
-    settings: { vnext: [{ address: parsed.host, port: parsed.port, users: [user] }] },
-    streamSettings: buildStreamSettings(p, parsed.host, 'none')
-  };
+  return "ss" === u.protocol
+    ? {
+        protocol: "shadowsocks",
+        tag: "proxy",
+        settings: {
+          servers: [
+            {
+              address: u.host,
+              port: u.port,
+              method: u.method,
+              password: u.password,
+            },
+          ],
+        },
+      }
+    : "socks" === u.protocol
+      ? ((l = { address: u.host, port: u.port }),
+        u.user && (l.users = [{ user: u.user, pass: u.pass || "" }]),
+        { protocol: "socks", tag: "proxy", settings: { servers: [l] } })
+      : "trojan" === u.protocol
+        ? {
+            protocol: "trojan",
+            tag: "proxy",
+            settings: {
+              servers: [
+                { address: u.host, port: u.port, password: u.password },
+              ],
+            },
+            streamSettings: buildStreamSettings(d, u.host, "tls"),
+          }
+        : "vmess" === u.protocol
+          ? ((a = {
+              id: u.uuid,
+              alterId: u.aid || 0,
+              security: u.scy || "auto",
+            }),
+            {
+              protocol: "vmess",
+              tag: "proxy",
+              settings: {
+                vnext: [{ address: u.host, port: u.port, users: [a] }],
+              },
+              streamSettings: buildStreamSettings(d, u.host, "none"),
+            })
+          : ((p = { id: u.uuid, encryption: "none" }),
+            d.flow && (p.flow = d.flow),
+            {
+              protocol: "vless",
+              tag: "proxy",
+              settings: {
+                vnext: [{ address: u.host, port: u.port, users: [p] }],
+              },
+              streamSettings: buildStreamSettings(d, u.host, "none"),
+            });
 }
-
-/* Bound XHTTP multiplexing so a hostile or misconfigured server cannot make
-   the core open an unbounded number of concurrent streams on a small TV. */
-function applyXhttpLimits(settings) {
-  var target, download;
-  if (!isObject(settings)) return;
-  target = isObject(settings.extra) ? settings.extra : settings;
-  if (!isObject(target.xmux)) {
-    target.xmux = {
-      maxConcurrency: '16-32',
-      cMaxReuseTimes: '128-256',
-      hMaxRequestTimes: '600-900',
-      hMaxReusableSecs: '300-600'
-    };
-  }
-  download = isObject(target.downloadSettings) ? target.downloadSettings
-    : (isObject(settings.downloadSettings) ? settings.downloadSettings : null);
-  if (download) applyXhttpLimits(download.xhttpSettings || download.splitHTTPSettings || download.splithttpSettings);
+function applyXhttpLimits(t) {
+  var e, r;
+  isObject(t) &&
+    ((e = isObject(t.extra) ? t.extra : t),
+    isObject(e.xmux) ||
+      (e.xmux = {
+        maxConcurrency: "16-32",
+        cMaxReuseTimes: "128-256",
+        hMaxRequestTimes: "600-900",
+        hMaxReusableSecs: "300-600",
+      }),
+    (r = isObject(e.downloadSettings)
+      ? e.downloadSettings
+      : isObject(t.downloadSettings)
+        ? t.downloadSettings
+        : null) &&
+      applyXhttpLimits(
+        r.xhttpSettings || r.splitHTTPSettings || r.splithttpSettings
+      ));
 }
-
-function boundedPolicyValue(level, key, fallback, maximum) {
-  var value = level[key];
-  if (typeof value !== 'number' || !isFinite(value) || value <= 0) level[key] = fallback;
-  else if (value > maximum) level[key] = maximum;
+function boundedPolicyValue(t, e, r, s) {
+  var o = t[e];
+  "number" != typeof o || !isFinite(o) || o <= 0
+    ? (t[e] = r)
+    : o > s && (t[e] = s);
 }
-
-/* Clamp logging and connection policy. Access logging stays off so proxy
-   destinations are never written to disk. */
-function applyResourcePolicy(cfg) {
-  var outbounds, i, stream, xhttp, network;
-  if (!isObject(cfg.log)) cfg.log = {};
-  cfg.log.access = 'none';
-  cfg.log.error = '';
-  cfg.log.dnsLog = false;
-  if (cfg.log.loglevel !== 'warning' && cfg.log.loglevel !== 'error' && cfg.log.loglevel !== 'none') {
-    cfg.log.loglevel = 'warning';
-  }
-  if (!isObject(cfg.policy)) cfg.policy = {};
-  if (!isObject(cfg.policy.levels)) cfg.policy.levels = {};
-  if (!isObject(cfg.policy.levels['0'])) cfg.policy.levels['0'] = {};
-  boundedPolicyValue(cfg.policy.levels['0'], 'handshake', 5, 8);
-  boundedPolicyValue(cfg.policy.levels['0'], 'connIdle', 60, 60);
-  boundedPolicyValue(cfg.policy.levels['0'], 'uplinkOnly', 5, 10);
-  boundedPolicyValue(cfg.policy.levels['0'], 'downlinkOnly', 5, 10);
-
-  outbounds = isArray(cfg.outbounds) ? cfg.outbounds : [];
-  for (i = 0; i < outbounds.length; i++) {
-    stream = outbounds[i] && outbounds[i].streamSettings;
-    if (!isObject(stream)) continue;
-    xhttp = stream.xhttpSettings || stream.splitHTTPSettings || stream.splithttpSettings;
-    network = String(stream.network || '').toLowerCase();
-    if (network === 'xhttp' || network === 'splithttp' || xhttp) applyXhttpLimits(xhttp);
-  }
-  return cfg;
+function applyResourcePolicy(t) {
+  var e, r, s, o, n;
+  for (
+    isObject(t.log) || (t.log = {}),
+      t.log.access = "none",
+      t.log.error = "",
+      t.log.dnsLog = !1,
+      "warning" !== t.log.loglevel &&
+        "error" !== t.log.loglevel &&
+        "none" !== t.log.loglevel &&
+        (t.log.loglevel = "warning"),
+      isObject(t.policy) || (t.policy = {}),
+      isObject(t.policy.levels) || (t.policy.levels = {}),
+      isObject(t.policy.levels[0]) || (t.policy.levels[0] = {}),
+      boundedPolicyValue(t.policy.levels[0], "handshake", 5, 8),
+      boundedPolicyValue(t.policy.levels[0], "connIdle", 60, 60),
+      boundedPolicyValue(t.policy.levels[0], "uplinkOnly", 5, 10),
+      boundedPolicyValue(t.policy.levels[0], "downlinkOnly", 5, 10),
+      e = isArray(t.outbounds) ? t.outbounds : [],
+      r = 0;
+    r < e.length;
+    r++
+  )
+    isObject((s = e[r] && e[r].streamSettings)) &&
+      ((o = s.xhttpSettings || s.splitHTTPSettings || s.splithttpSettings),
+      ("xhttp" === (n = String(s.network || "").toLowerCase()) ||
+        "splithttp" === n ||
+        o) &&
+        applyXhttpLimits(o));
+  return t;
 }
-
-/* Give the core the endpoint addresses that were resolved before the routes
-   changed, so establishing the first outbound needs no network DNS.
-
-   Two things are required, and neither works alone. This was established on
-   hardware against the pinned Xray 26.3.27:
-
-     - `dns.hosts` supplies the answer without a network query, but the outbound
-       dialer does not consult Xray's DNS by default: it hands the domain to
-       Go's system resolver, which is exactly the resolver the split routes
-       just made unreachable;
-     - `sockopt.domainStrategy` moves the dial onto Xray's internal DNS, but on
-       its own that DNS still has to ask the configured (public) servers.
-
-   Together the dial resolves from the static table and never leaves the box.
-
-   The outbound `address` keeps the original domain throughout, which is what
-   preserves TLS hostname verification, SNI, REALITY serverName, gRPC authority
-   and WebSocket/HTTP Host. Only the name->address lookup is short-circuited. */
-function applyBootstrap(cfg, bootstrap) {
-  var map = bootstrap && bootstrap.map;
-  var normalized = Object.create(null);
-  var outbounds, i, j, host, key, hosts, item, settings, nodes, stream, touched;
-
-  if (!map) return cfg;
-  hosts = null;
-  for (host in map) {
-    if (!own(map, host) || !isArray(map[host]) || !map[host].length) continue;
-    key = canonicalHost(host);
-    normalized[key] = map[host].slice(0);
-    if (!hosts) hosts = {};
-    /* In the pinned XRay 26.3.27 parser an unprefixed hosts key is
-       DomainMatchingType_Full (infra/conf/dns.go, HostsWrapper.Build).
-       Keep the key byte-for-byte equal to the outbound hostname: the runtime
-       full matcher is deliberately exact and case-sensitive. */
-    hosts[key] = normalized[key].slice(0);
-  }
-  if (!hosts) return cfg;
-
-  if (!isObject(cfg.dns)) cfg.dns = {};
-  if (!isObject(cfg.dns.hosts)) cfg.dns.hosts = {};
-  for (host in hosts) {
-    if (own(hosts, host)) cfg.dns.hosts[host] = hosts[host];
-  }
-
-  outbounds = isArray(cfg.outbounds) ? cfg.outbounds : [];
-  for (i = 0; i < outbounds.length; i++) {
-    item = outbounds[i] || {};
-    settings = item.settings || {};
-    nodes = settings.vnext || settings.servers || [];
-    touched = false;
-    for (j = 0; j < nodes.length; j++) {
-      if (nodes[j] && own(normalized, canonicalHost(nodes[j].address || nodes[j].server))) touched = true;
+/* A freedom outbound inside a full-route TUN must never follow the kernel's
+   split default back into the TUN.  That creates a recursion loop:
+   Xray freedom -> TUN -> tun2socks -> Xray SOCKS -> freedom.  Pinning only
+   freedom sockets to the discovered physical NIC preserves imported direct
+   rules without weakening the proxy endpoint route checks. */
+function applyDirectInterface(t, e) {
+  var r, s, o, n;
+  if (!e || !isObject(t)) return t;
+  for (r = isArray(t.outbounds) ? t.outbounds : [], s = 0; s < r.length; s++)
+    if (
+      isObject((o = r[s])) &&
+      "freedom" === String(o.protocol || "").toLowerCase()
+    ) {
+      (isObject(o.streamSettings) || (o.streamSettings = {}),
+        isObject((n = o.streamSettings).sockopt) || (n.sockopt = {}),
+        (n.sockopt.interface = String(e)));
     }
-    if (own(normalized, canonicalHost(settings.address || item.address || item.server))) touched = true;
-    if (!touched) continue;
-    if (!isObject(item.streamSettings)) item.streamSettings = {};
-    stream = item.streamSettings;
-    if (!isObject(stream.sockopt)) stream.sockopt = {};
-    /* Preserve every explicit strategy that can use an IPv4 answer. AsIs
-       retains the system-resolver deadlock, while the IPv6-only strategies
-       cannot use this IPv4 bootstrap result; those three cases become UseIP. */
-    key = String(stream.sockopt.domainStrategy || '').toLowerCase();
-    if (!key || key === 'asis' || key === 'useipv6' || key === 'forceipv6') {
-      stream.sockopt.domainStrategy = 'UseIP';
-    }
-  }
-  return cfg;
+  return t;
 }
-
-/* Preserve a complete user config, pinning only the inbound and the
-   private-range bypass rule. */
-function buildFullConfig(source, bootstrap) {
-  var cfg = JSON.parse(JSON.stringify(source));
-  var originalInbounds = isArray(cfg.inbounds) ? cfg.inbounds : [];
-  var inboundTag = (originalInbounds[0] && originalInbounds[0].tag) || 'socks-in';
-  var outbounds = isArray(cfg.outbounds) ? cfg.outbounds : [];
-  var directTag = '', i;
-
-  for (i = 0; i < outbounds.length; i++) {
-    if (String((outbounds[i] && outbounds[i].protocol) || '').toLowerCase() === 'freedom') {
-      directTag = outbounds[i].tag || 'direct';
+function uniqueTag(t, e) {
+  var r,
+    s,
+    o = {},
+    n = 0;
+  for (r = 0; r < t.length; r++) t[r] && t[r].tag && (o[String(t[r].tag)] = !0);
+  for (s = e; o[s];) s = e + "-" + ++n;
+  return s;
+}
+function applyDns(t, e) {
+  var r,
+    s,
+    o,
+    n,
+    i,
+    l = "";
+  if (!e) return t;
+  for (r = isArray(t.outbounds) ? t.outbounds : [], o = 0; o < r.length; o++)
+    if (
+      ((i = r[o] || {}),
+      (n = String(i.protocol || "").toLowerCase()),
+      i.tag && "freedom" !== n && "blackhole" !== n && "dns" !== n)
+    ) {
+      l = String(i.tag);
       break;
     }
-  }
-  if (!directTag) { directTag = 'alcyone-direct'; outbounds.push({ protocol: 'freedom', tag: directTag }); }
-
-  cfg.inbounds = [{
-    tag: inboundTag, listen: '127.0.0.1', port: SOCKS_PORT, protocol: 'socks',
-    settings: { auth: 'noauth', udp: true },
-    sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'] }
-  }];
-  cfg.outbounds = outbounds;
-  if (!cfg.log) cfg.log = { loglevel: 'warning' };
-  if (!isObject(cfg.routing)) cfg.routing = { domainStrategy: 'AsIs', rules: [] };
-  if (!isArray(cfg.routing.rules)) cfg.routing.rules = [];
-  cfg.routing.rules.unshift({ type: 'field', ip: PRIVATE_RANGES.slice(0), outboundTag: directTag });
-  delete cfg.remarks;
-  delete cfg.meta;
-  return applyBootstrap(applyResourcePolicy(cfg), bootstrap);
+  return (
+    (i = {
+      protocol: "dns",
+      tag: (s = uniqueTag(r, DNS_OUTBOUND_TAG)),
+      settings: { network: "udp", address: String(e), port: 53 },
+    }),
+    l && (i.proxySettings = { tag: l }),
+    r.push(i),
+    (t.outbounds = r),
+    isObject(t.dns) || (t.dns = {}),
+    (t.dns.servers = [String(e)]),
+    isObject(t.routing) || (t.routing = { domainStrategy: "AsIs", rules: [] }),
+    isArray(t.routing.rules) || (t.routing.rules = []),
+    t.routing.rules.unshift({
+      type: "field",
+      network: "tcp,udp",
+      port: "53",
+      outboundTag: s,
+    }),
+    t
+  );
 }
-
-function build(profile, bootstrap) {
-  if (!profile) throw err('NO_ACTIVE_PROFILE', 'no profile');
-  if (profile.fullConfig) return buildFullConfig(profile.fullConfig, bootstrap);
-  return applyBootstrap(applyResourcePolicy({
-    log: { loglevel: 'warning' },
-    inbounds: [{
-      tag: 'socks-in', listen: '127.0.0.1', port: SOCKS_PORT, protocol: 'socks',
-      settings: { auth: 'noauth', udp: true },
-      sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'] }
-    }],
-    outbounds: [outboundFor(profile), { protocol: 'freedom', tag: 'direct' }, { protocol: 'blackhole', tag: 'block' }],
-    routing: {
-      domainStrategy: 'AsIs',
-      rules: [{ type: 'field', ip: PRIVATE_RANGES.slice(0), outboundTag: 'direct' }]
+function applyBootstrap(t, e) {
+  var r,
+    s,
+    o,
+    n,
+    i,
+    l,
+    a,
+    p,
+    u,
+    d,
+    g,
+    c = e && e.map,
+    h = Object.create(null);
+  if (!c) return t;
+  for (n in ((l = null), c))
+    own(c, n) &&
+      isArray(c[n]) &&
+      c[n].length &&
+      ((h[(i = canonicalHost(n))] = c[n].slice(0)),
+      l || (l = {}),
+      (l[i] = h[i].slice(0)));
+  if (!l) return t;
+  for (n in (isObject(t.dns) || (t.dns = {}),
+  isObject(t.dns.hosts) || (t.dns.hosts = {}),
+  l))
+    own(l, n) && (t.dns.hosts[n] = l[n]);
+  for (r = isArray(t.outbounds) ? t.outbounds : [], s = 0; s < r.length; s++) {
+    for (
+      u = (p = (a = r[s] || {}).settings || {}).vnext || p.servers || [],
+        g = !1,
+        o = 0;
+      o < u.length;
+      o++
+    )
+      u[o] && own(h, canonicalHost(u[o].address || u[o].server)) && (g = !0);
+    (own(h, canonicalHost(p.address || a.address || a.server)) && (g = !0),
+      g &&
+        (isObject(a.streamSettings) || (a.streamSettings = {}),
+        isObject((d = a.streamSettings).sockopt) || (d.sockopt = {}),
+        ((i = String(d.sockopt.domainStrategy || "").toLowerCase()) &&
+          "asis" !== i &&
+          "useipv6" !== i &&
+          "forceipv6" !== i) ||
+          (d.sockopt.domainStrategy = "UseIP")));
+  }
+  return t;
+}
+function buildFullConfig(t, e, r) {
+  var s,
+    o = JSON.parse(JSON.stringify(t)),
+    n = isArray(o.inbounds) ? o.inbounds : [],
+    i = (n[0] && n[0].tag) || "socks-in",
+    l = isArray(o.outbounds) ? o.outbounds : [],
+    a = "";
+  for (s = 0; s < l.length; s++)
+    if ("freedom" === String((l[s] && l[s].protocol) || "").toLowerCase()) {
+      a = l[s].tag || "direct";
+      break;
     }
-  }), bootstrap);
+  return (
+    a || ((a = "alcyone-direct"), l.push({ protocol: "freedom", tag: a })),
+    (o.inbounds = [
+      {
+        tag: i,
+        listen: "127.0.0.1",
+        port: SOCKS_PORT,
+        protocol: "socks",
+        settings: { auth: "noauth", udp: !0 },
+        sniffing: { enabled: !0, destOverride: ["http", "tls", "quic"] },
+      },
+    ]),
+    (o.outbounds = l),
+    o.log || (o.log = { loglevel: "warning" }),
+    isObject(o.routing) || (o.routing = { domainStrategy: "AsIs", rules: [] }),
+    isArray(o.routing.rules) || (o.routing.rules = []),
+    o.routing.rules.unshift({
+      type: "field",
+      ip: PRIVATE_RANGES.slice(0),
+      outboundTag: a,
+    }),
+    delete o.remarks,
+    delete o.meta,
+    (r = r || {}),
+    applyDirectInterface(
+      applyBootstrap(applyDns(applyResourcePolicy(o), r.dnsServer), e),
+      r.physicalInterface
+    )
+  );
 }
-
-/* Hosts the tunnel must reach directly, so routing can bypass them. */
-function endpoints(profile) {
-  var result = [], seen = {}, outbounds, i, j, item, settings, nodes, parsed;
-
-  function networkFor(outbound) {
-    var protocol = String((outbound && outbound.protocol) || '').toLowerCase();
-    if (protocol === 'hysteria' || protocol === 'hysteria2' ||
-        protocol === 'tuic' || protocol === 'wireguard') return 'udp';
-    return 'tcp';
+function replaceWithHttpInbound(t) {
+  var e = isArray(t.inbounds) ? t.inbounds : [],
+    r = e[0] && e[0].tag ? e[0].tag : "http-in";
+  return (
+    (t.inbounds = [
+      {
+        tag: r,
+        listen: "127.0.0.1",
+        port: HTTP_PORT,
+        protocol: "http",
+        settings: { allowTransparent: !1 },
+        sniffing: { enabled: !0, destOverride: ["http", "tls"] },
+      },
+    ]),
+    t
+  );
+}
+function buildTun(t, e, r) {
+  if (!t) throw err("NO_ACTIVE_PROFILE", "no profile");
+  return (
+    (r = r || {}),
+    t.fullConfig
+      ? withNativeTun(
+          r,
+          buildFullConfig(t.fullConfig, e, r)
+        )
+      : withNativeTun(
+          r,
+          applyDirectInterface(
+            applyBootstrap(
+              applyDns(
+                applyResourcePolicy({
+                  log: { loglevel: "warning" },
+                  inbounds: [
+                    {
+                      tag: "socks-in",
+                      listen: "127.0.0.1",
+                      port: SOCKS_PORT,
+                      protocol: "socks",
+                      settings: { auth: "noauth", udp: !0 },
+                      sniffing: {
+                        enabled: !0,
+                        destOverride: ["http", "tls", "quic"],
+                      },
+                    },
+                  ],
+                  outbounds: [
+                    outboundFor(t),
+                    { protocol: "freedom", tag: "direct" },
+                    { protocol: "blackhole", tag: "block" },
+                  ],
+                  routing: {
+                    domainStrategy: "AsIs",
+                    rules: [
+                      {
+                        type: "field",
+                        ip: PRIVATE_RANGES.slice(0),
+                        outboundTag: "direct",
+                      },
+                    ],
+                  },
+                }),
+                r.dnsServer
+              ),
+              e
+            ),
+            r.physicalInterface
+          )
+        )
+  );
+}
+/* Native TUN data plane (single-process XRay): prepends a tun inbound so
+   XRay owns the device itself and go-tun2socks is not started. The loopback
+   SOCKS inbound stays for health probes. The inbound shape is isolated
+   here; edition configs may override it wholesale via tunInboundOverride
+   while the on-device spike settles exact upstream field names. */
+function nativeTunInbound(r) {
+  return r && r.tunInboundOverride
+    ? JSON.parse(JSON.stringify(r.tunInboundOverride))
+    : {
+        tag: "tun-in",
+        protocol: "tun",
+        settings: {
+          name: (r && r.interfaceName) || "alx0",
+          mtu: (r && r.mtu) || 1400,
+        },
+        sniffing: { enabled: !0, destOverride: ["http", "tls", "quic"] },
+      };
+}
+function withNativeTun(r, e) {
+  return "native-tun" === (r && r.dataPlane)
+    ? ((e.inbounds = [nativeTunInbound(r)].concat(e.inbounds)), e)
+    : e;
+}
+/* Data plane selection belongs to the edition config, not to probing:
+   flipping modes is an explicit release decision backed by hardware
+   qualification, never an automatic fallback. */
+function dataPlaneFor(e) {
+  return e && "native-tun" === e.dataPlane ? "native-tun" : "tun2socks";
+}
+function build(t, e, r) {
+  return "systemProxy" === (r = r || {}).mode
+    ? buildSystemProxy(t, e, r)
+    : buildTun(t, e, r);
+}
+function buildSystemProxy(t, e, r) {
+  return replaceWithHttpInbound(buildTun(t, e, r || {}));
+}
+function endpoints(t) {
+  var e,
+    r,
+    s,
+    o,
+    n,
+    i,
+    l,
+    a = [],
+    p = {};
+  function u(t) {
+    var e = String((t && t.protocol) || "").toLowerCase();
+    return "hysteria" === e ||
+      "hysteria2" === e ||
+      "tuic" === e ||
+      "wireguard" === e
+      ? "udp"
+      : "tcp";
   }
-
-  function add(host, port, network) {
-    var key;
-    host = String(host || '').trim();
-    key = host.toLowerCase() + '|' + String(port || '') + '|' + String(network || 'tcp');
-    if (!host || seen[key]) return;
-    seen[key] = true;
-    result.push({ host: host, port: port || '', network: network || 'tcp' });
+  function d(t, e, r) {
+    var s;
+    ((s =
+      (t = String(t || "").trim()).toLowerCase() +
+      "|" +
+      String(e || "") +
+      "|" +
+      String(r || "tcp")),
+      t &&
+        !p[s] &&
+        ((p[s] = !0), a.push({ host: t, port: e || "", network: r || "tcp" })));
   }
-
-  if (profile && profile.fullConfig) {
-    outbounds = (profile.fullConfig && profile.fullConfig.outbounds) || [];
-    for (i = 0; i < outbounds.length; i++) {
-      item = outbounds[i] || {};
-      settings = item.settings || {};
-      nodes = settings.vnext || settings.servers || [];
-      for (j = 0; j < nodes.length; j++) {
-        add(nodes[j] && (nodes[j].address || nodes[j].server),
-          nodes[j] && nodes[j].port, networkFor(item));
+  if (t && t.fullConfig) {
+    for (
+      e = (t.fullConfig && t.fullConfig.outbounds) || [], r = 0;
+      r < e.length;
+      r++
+    )
+      if (
+        ((o = e[r] || {}),
+        !/^(freedom|blackhole|dns)$/i.test(String(o.protocol || "")))
+      ) {
+        for (
+          i = (n = o.settings || {}).vnext || n.servers || [], s = 0;
+          s < i.length;
+          s++
+        )
+          d(i[s] && (i[s].address || i[s].server), i[s] && i[s].port, u(o));
+        d(
+          n.address || o.address || o.server,
+          n.port || o.port || o.server_port,
+          u(o)
+        );
       }
-      add(settings.address || item.address || item.server,
-        settings.port || item.port || item.server_port, networkFor(item));
-    }
-    return result;
+    return a;
   }
-  parsed = parsers.parseProxyLink(profile.link);
-  add(parsed.host, parsed.port, parsed.protocol === 'hysteria2' ? 'udp' : 'tcp');
-  return result;
+  return (
+    d(
+      (l = parsers.parseProxyLink(t.link)).host,
+      l.port,
+      "hysteria2" === l.protocol ? "udp" : "tcp"
+    ),
+    a
+  );
 }
-
 module.exports = {
   SOCKS_PORT: SOCKS_PORT,
+  HTTP_PORT: HTTP_PORT,
   PRIVATE_RANGES: PRIVATE_RANGES,
   build: build,
+  buildTun: buildTun,
+  buildSystemProxy: buildSystemProxy,
   buildFullConfig: buildFullConfig,
   outboundFor: outboundFor,
   buildStreamSettings: buildStreamSettings,
   applyResourcePolicy: applyResourcePolicy,
+  applyDirectInterface: applyDirectInterface,
+  applyDns: applyDns,
   applyBootstrap: applyBootstrap,
-  endpoints: endpoints
+  endpoints: endpoints,
+  nativeTunInbound: nativeTunInbound,
+  dataPlaneFor: dataPlaneFor,
 };

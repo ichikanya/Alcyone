@@ -1,5 +1,76 @@
 # Changelog
 
+## 4.2.2 (unreleased)
+
+Stabilization line from the August 2026 audit. No user-visible feature
+changes; every item below removes a proven failure mode.
+
+- Upgrade safety: profile stores are raw-backed up before any migration;
+  a corrupt store now blocks the upgrade (`STORE_UNRECOVERABLE`) instead
+  of being silently replaced by an empty list; sing-box-incompatible
+  profiles are marked, never deleted; network recovery runs before data
+  migration on boot.
+- Independent network guardian (ALCYONE_NETGUARD=1): a root-level
+  rtnetlink watchdog removes only the leased diversion objects when the
+  service dies, hangs or is SIGSTOP-ed, restoring ordinary internet
+  without any Node code. Armed before the route takeover, disarmed only
+  after the physical path is verified.
+- Routing: policy verification is table-aware (healthy policy sessions
+  no longer fall back to legacy); rollback without owned state issues no
+  destructive commands; each edition owns its own TUN device (`alx0` /
+  `als0`), so one edition can never destroy the other's tunnel. Legacy
+  endpoint escape routes now fail closed and are reverified after route
+  takeover, data-plane verification and by the live network guard, preventing
+  a proxy-endpoint loop through the TUN. Imported XRay `freedom` outbounds are
+  pinned to the discovered physical interface, closing the separate
+  `freedom -> TUN -> tun2socks -> XRay` recursion exposed by provider direct
+  rules under YouTube traffic. Policy tables also copy and verify the real
+  on-link routes of the physical NIC before activation; this keeps LAN/SSH
+  replies direct instead of hairpinning them through the router, while older
+  kernels that cannot prove those routes fall back to legacy routing.
+- Core shutdown: SIGKILL is only a request; the service retains STOPPING and
+  the tunnel lock until the kernel confirms `exit`. Process-control errors no
+  longer impersonate an exit, and exact `/proc/<pid>/exe` orphan checks
+  (including upgraded `(deleted)` executables) block duplicate core startup.
+- Watchdog: only bidirectional traffic counts as liveness evidence;
+  failed public probe sites remain a visible warning while fresh bidirectional
+  TUN traffic proves the user's connection is working, rather than tearing
+  down an active YouTube session. Three failed probes without that traffic
+  evidence, or sustained near-limit descriptors, open incidents that trigger
+  recovery. TV-safe absolute
+  and one-tick FD-growth guards now bypass the post-connect grace window, so a
+  recursive socket storm is stopped hundreds of descriptors in rather than at
+  95% of a process limit sized far above the TV's memory budget.
+- Recovery budget: at most three automatic reconnects per rolling 30
+  minutes with 0/60 s/5 min steps and a 30 minute breaker, persisted
+  across service restarts; ten minutes of healthy session forgives the
+  oldest attempt. This persistent budget is now the sole restart-storm guard;
+  the duplicate in-memory "second incident" latch no longer strands the VPN
+  off after a recoverable second failure.
+- Data plane: optional single-process XRay native TUN mode
+  (edition `dataPlane: "native-tun"`, hardware-spike gated); TUN MTU is
+  policy-driven (clamp to 1280–1400) instead of hardcoded 1500.
+- Release tooling: `build_ipk.py` defaults to `build/dist` and emits an
+  artifacts manifest; new release-metadata guard proves feed files,
+  manifests and shipped IPK hashes/sizes agree (repository.json drift
+  found and fixed).
+- Hardware qualification: the final XRay IPK passed instrumented YouTube
+  testing plus multi-hour real sessions on the target webOS 4.x and 5.x TVs
+  without watchdog recovery, descriptor runaway or a stuck core. A reboot
+  with a persisted route journal was also verified to recover to an idle,
+  physical-network-only state without changing profiles, root or installed
+  developer apps.
+
+## 4.2.0 (2026-08-19)
+
+- Added resource-aware tunnel liveness monitoring, route-first fail-open recovery, a single delayed reconnect, and a repeated-incident circuit breaker.
+- Added an optional static ARM launcher with inherited-FD cleanup, parent-death signaling, and per-core descriptor limits.
+- Added policy routing with explicit proxy-endpoint escape rules and safe fallback to the legacy route backend.
+- Added ConnectionManager API negotiation and kernel fallback across webOS generations.
+- Reworked autostart around persistent intent, DHCP readiness, ActivityManager wake triggers, ConnectionManager subscriptions, and Quick Start timer-gap detection.
+- Fixed D-Pad focus escape and server-picker Back focus in autostart settings.
+- Fixed subscription imports that escalated redirects or provider errors into request storms and eventual HTTP 429 responses; client-profile and HWID retries are now explicit, bounded, and demand-driven.
+
 ## 4.0.4 (2026-08-06)
 
 - Replaced the custom IPK archive writer with the official webOS
