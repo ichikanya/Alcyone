@@ -129,6 +129,21 @@ def main():
     )
     print(("ok   - " if official_packaging else "FAIL - ") + "builder delegates IPK creation to ares-package")
 
+    workflow_source = open(
+        os.path.join(ROOT, ".github", "workflows", "release.yml"),
+        encoding="utf-8",
+    ).read()
+    zig_sha256 = "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
+    pinned_zig = (
+        'zig_version="0.16.0"' in workflow_source
+        and "https://ziglang.org/download/" in workflow_source
+        and "zig-x86_64-linux-${zig_version}.tar.xz" in workflow_source
+        and zig_sha256 in workflow_source
+        and "sha256sum -c -" in workflow_source
+        and '>> "${GITHUB_PATH}"' in workflow_source
+    )
+    print(("ok   - " if pinned_zig else "FAIL - ") + "release CI installs verified Zig 0.16.0")
+
     # The sanitizer legitimately reads profile.link to derive a display label,
     # so inspect what it actually emits rather than the source text.
     sanitizer_ok = True
@@ -167,7 +182,7 @@ def main():
     print(("ok   - " if sanitizer_ok else "FAIL - ") + "sanitized profiles carry no secret fields")
 
     print("\nscanned %d files" % scanned)
-    if findings or not official_packaging or not sanitizer_ok:
+    if findings or not official_packaging or not pinned_zig or not sanitizer_ok:
         sys.exit(1)
 
 
